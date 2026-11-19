@@ -1,0 +1,168 @@
+"""Pruebas del procesamiento de imagen (panelclean/vision.py).
+
+Ejecutar desde la raíz del repositorio:
+    python -m unittest discover tests
+"""
+
+import unittest
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from panelclean import vision as V
+
+DEMO = Path(__file__).resolve().parent.parent / 'examples' / 'demo_pagina.png'
+
+# Rectángulos (x1, y1, x2, y2) ajustados al texto de los tres globos de la página de ejemplo.
+TEXTO_LISO = (415, 340, 590, 445)  # «¿DÓNDE ESTÁS?», globo blanco
+TEXTO_PUNTOS = (
+    1095,
+    165,
+    1290,
+    260,
+)  # «NO PUEDE SER...», globo blanco sobre viñeta punteada
+TEXTO_TRAMA = (1120, 635, 1265, 740)  # «¿QUÉ PASÓ?», globo con trama
+
+
+def mascara_completa(imagen, region):
+    """Devuelve la máscara de la región ubicada en una imagen del tamaño de la página."""
+    total = np.zeros(imagen.shape[:2], np.uint8)
+    total[region.y : region.y + region.h, region.x : region.x + region.w] = region.mask
+    return total
+
+
+class RegionTest(unittest.TestCase):
+    def setUp(self):
+        self.img = V.bgr_from_file(str(DEMO))
+
+    def test_lee_la_pagina_de_ejemplo(self):
+        self.assertEqual(self.img.shape, (980, 1400, 3))
+
+    def test_ordena_y_recorta_las_coordenadas(self):
+        r = V.bounded_region(self.img, (1450, 50, 1300, -20))
+        self.assertEqual((r.x, r.y, r.x + r.w, r.y + r.h), (1300, 0, 1400, 50))
+
+    def test_rechaza_regiones_demasiado_chicas(self):
+        with self.assertRaises(ValueError):
+            V.bounded_region(self.img, (10, 10, 20, 100))
+
+
+class MascaraTest(unittest.TestCase):
+    def setUp(self):
+        self.img = V.bgr_from_file(str(DEMO))
+        self.opts = V.Options()
+
+    def test_la_mascara_cubre_texto_y_queda_dentro_de_la_region(self):
+        r = V.bounded_region(self.img, TEXTO_LISO)
+        mask = V.generate_mask(self.img, r, self.opts)
+        self.assertEqual(mask.shape, (r.h, r.w))
+        self.assertGreater(cv2.countNonZero(mask), 1000)
+        # Los píxeles marcados deben ser oscuros en la imagen original (tinta, no fondo).
+        gris = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)[
+            r.y : r.y + r.h, r.x : r.x + r.w
+        ]
+        sin_dilatar = V.generate_mask(self.img, r, V.Options(expansion=0))
+        self.assertLess(float(gris[sin_dilatar > 0].mean()), 110)
+
+    def test_no_marca_lineas_largas(self):
+        # Página sintética: texto y una línea horizontal que cruza toda la región.
+        img = np.full((160, 320, 3), 255, np.uint8)
+        cv2.putText(img, 'HOLA', (60, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 4)
+        cv2.line(img, (0, 125), (319, 125), (0, 0, 0), 3)
+        r = V.bounded_region(img, (0, 0, 320, 160))
+        mask = V.generate_mask(img, r, V.Options(expansion=0))
+        self.assertGreater(
+            cv2.countNonZero(mask[30:100]), 300, 'debe marcar las letras'
+        )
+        self.assertEqual(cv2.countNonZero(mask[118:133]), 0, 'no debe marcar la línea')
+
+    def test_region_sin_tinta(self):
+        img = np.full((100, 100, 3), 250, np.uint8)
+        r = V.bounded_region(img, (10, 10, 90, 90))
+        out, metodo, n = V.clean_region(img, r, self.opts)
+        self.assertEqual(n, 0)
+        self.assertEqual(metodo, 'Sin trazos detectados')
+        self.assertTrue(np.array_equal(out, img))
+
+
+class FondoTest(unittest.TestCase):
+    def setUp(self):
+        self.img = V.bgr_from_file(str(DEMO))
+        self.opts = V.Options()
+
+    def clasificar(self, caja):
+        r = V.bounded_region(self.img, caja)
+        V.generate_mask(self.img, r, self.opts)
+        return r
+
+    def test_globo_blanco_es_uniforme(self):
+        r = self.clasificar(TEXTO_LISO)
+        self.assertEqual(r.classification, 'Uniforme')
+        self.assertEqual(r.suggested_method, 'Relleno local')
+
+    def test_globo_con_trama_es_estructurado(self):
+        r = self.clasificar(TEXTO_TRAMA)
+        self.assertEqual(r.classification, 'Estructurado')
+        self.assertEqual(r.suggested_method, 'Inpainting Telea')
+
+
+class LimpiezaTest(unittest.TestCase):
+    """La limpieza nunca debe modificar píxeles fuera de la máscara (meta del Hito 1)."""
+
+    def setUp(self):
+        self.img = V.bgr_from_file(str(DEMO))
+
+    def comprobar(self, caja, metodo):
+        r = V.bounded_region(self.img, caja)
+        opts = V.Options(method=metodo)
+        V.generate_mask(self.img, r, opts)
+        out, usado, n = V.clean_region(self.img, r, opts)
+        self.assertGreater(n, 0)
+        cambiados = np.any(out != self.img, axis=2)
+        fuera = cambiados & (mascara_completa(self.img, r) == 0)
+        self.assertEqual(
+            int(fuera.sum()), 0, f'{metodo} cambió píxeles fuera de la máscara'
+        )
+        self.assertGreater(int(cambiados.sum()), 0, f'{metodo} no cambió nada')
+        return out, usado, r
+
+    def test_relleno_local(self):
+        out, usado, r = self.comprobar(TEXTO_LISO, 'Relleno local')
+        self.assertEqual(usado, 'Relleno local')
+        # En un globo blanco, lo limpiado debe quedar blanco.
+        zona = out[r.y : r.y + r.h, r.x : r.x + r.w][r.mask > 0]
+        self.assertGreater(float(zona.mean()), 240)
+
+    def test_inpainting_telea(self):
+        self.comprobar(TEXTO_TRAMA, 'Inpainting Telea')
+
+    def test_inpainting_navier_stokes(self):
+        self.comprobar(TEXTO_PUNTOS, 'Inpainting NS')
+
+    def test_automatico_usa_el_metodo_sugerido(self):
+        _, usado, r = self.comprobar(TEXTO_TRAMA, 'Automático')
+        self.assertEqual(usado, r.suggested_method)
+
+    def test_revision_manual_no_modifica_la_imagen(self):
+        r = V.bounded_region(self.img, TEXTO_LISO)
+        V.generate_mask(self.img, r, V.Options())
+        out, usado, n = V.clean_region(self.img, r, V.Options(method='Revisión manual'))
+        self.assertEqual(n, 0)
+        self.assertTrue(np.array_equal(out, self.img))
+
+
+class DeteccionTest(unittest.TestCase):
+    def test_encuentra_los_tres_globos_del_ejemplo(self):
+        img = V.bgr_from_file(str(DEMO))
+        globos = V.detect_bubbles(img)
+        for x1, y1, x2, y2 in (TEXTO_LISO, TEXTO_PUNTOS, TEXTO_TRAMA):
+            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+            self.assertTrue(
+                any(g.contains(cx, cy) for g in globos),
+                f'falta el globo en ({cx}, {cy})',
+            )
+
+
+if __name__ == '__main__':
+    unittest.main()
