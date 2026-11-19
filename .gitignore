@@ -5,3 +5,6 @@ __pycache__/
 
 # Archivos temporales de Excel / Office (aparecen mientras un archivo está abierto)
 ~$*
+
+# Pares de ejemplo que guarda «python -m evaluacion.sinteticos»
+pares_ejemplo/
