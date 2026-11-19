@@ -1,0 +1,7 @@
+# Entorno de Python creado por los lanzadores
+.venv/
+__pycache__/
+*.pyc
+
+# Archivos temporales de Excel / Office (aparecen mientras un archivo está abierto)
+~$*

@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Los lanzadores necesitan sus finales de línea propios en cualquier sistema:
+# bash falla con CRLF y cmd puede fallar en los saltos (goto) con LF.
+*.sh  text eol=lf
+*.bat text eol=crlf
