@@ -502,10 +502,10 @@ class PanelCleanApp:
         card.pack(fill='x', padx=16, pady=(12, 5))
         self.info_name = self._label(card, 'Sin región', 12, 'cyan', True)
         self.info_name.pack(anchor='w', padx=11, pady=(13, 5))
-        self.info_var = self._label(card, 'Varianza  —', 9, 'muted')
-        self.info_var.pack(anchor='w', padx=11, pady=3)
-        self.info_edges = self._label(card, 'Bordes  —', 9, 'muted')
-        self.info_edges.pack(anchor='w', padx=11, pady=3)
+        self.info_entropy = self._label(card, 'Entropía  —', 9, 'muted')
+        self.info_entropy.pack(anchor='w', padx=11, pady=3)
+        self.info_dark = self._label(card, 'Tono oscuro  —', 9, 'muted')
+        self.info_dark.pack(anchor='w', padx=11, pady=3)
         self.info_pixels = self._label(card, 'Máscara  —', 9, 'muted')
         self.info_pixels.pack(anchor='w', padx=11, pady=(3, 12))
         self._group(inspector, 'Limpieza')
@@ -803,8 +803,8 @@ class PanelCleanApp:
         r = self.current_region()
         if r is None:
             self.info_name.configure(text='Sin región', fg=C['muted'])
-            self.info_var.configure(text='Varianza  —')
-            self.info_edges.configure(text='Bordes  —')
+            self.info_entropy.configure(text='Entropía  —')
+            self.info_dark.configure(text='Tono oscuro  —')
             self.info_pixels.configure(text='Máscara  —')
             return
         if r.mask is not None:
@@ -813,8 +813,10 @@ class PanelCleanApp:
             text=f'R{r.id:02d}  ·  {r.classification}',
             fg=C['cyan'] if not r.review_reason else C['orange'],
         )
-        self.info_var.configure(text=f'Varianza  {r.variance:.0f}')
-        self.info_edges.configure(text=f'Bordes  {r.edge_density*100:.1f}%')
+        self.info_entropy.configure(
+            text=f'Entropía  {r.entropy:.1f} bits  ·  textura {r.texture:.0%}'
+        )
+        self.info_dark.configure(text=f'Tono oscuro  {r.dark_level:.0f} / 255')
         self.info_pixels.configure(
             text=f'Máscara  {cv2.countNonZero(r.mask) if r.mask is not None else 0:,} px'
         )
@@ -1201,6 +1203,9 @@ class PanelCleanApp:
                         'procesada': r.id in self.applied_ids,
                         'clase': r.classification,
                         'metodo': r.last_method,
+                        'entropia': round(r.entropy, 3),
+                        'tono_oscuro': round(r.dark_level, 1),
+                        'textura': round(r.texture, 3),
                         'varianza': round(r.variance, 1),
                         'densidad_bordes': round(r.edge_density, 4),
                         'pixeles_mascara': (

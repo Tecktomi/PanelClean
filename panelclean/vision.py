@@ -11,11 +11,11 @@ import numpy as np
 class Options:
     """Ajustes de la máscara y de la limpieza elegidos en la interfaz."""
 
-    threshold: str = "Otsu"
+    threshold: str = 'Otsu'
     sensitivity: int = 4
     expansion: int = 1
     radius: int = 3
-    method: str = "Automático"
+    method: str = 'Automático'
 
 
 @dataclass
@@ -32,17 +32,20 @@ class Region:
     w: int
     h: int
     id: int = 0
-    origin: str = "Manual"
+    origin: str = 'Manual'
     interior: Optional[np.ndarray] = field(default=None, repr=False)
     mask: Optional[np.ndarray] = field(default=None, repr=False)
-    classification: str = "Sin analizar"
+    classification: str = 'Sin analizar'
     variance: float = 0.0
     edge_density: float = 0.0
-    suggested_method: str = ""
-    method_override: str = "Automático"
+    entropy: float = 0.0
+    dark_level: float = 255.0
+    texture: float = 0.0
+    suggested_method: str = ''
+    method_override: str = 'Automático'
     mask_edited: bool = False
-    review_reason: str = ""
-    last_method: str = ""
+    review_reason: str = ''
+    last_method: str = ''
     applied_radius: Optional[int] = None
 
     @property
@@ -60,7 +63,7 @@ def bgr_from_file(path: str) -> np.ndarray:
     from PIL import Image, ImageOps
 
     with Image.open(path) as obj:
-        rgb = np.asarray(ImageOps.exif_transpose(obj).convert("RGB"))
+        rgb = np.asarray(ImageOps.exif_transpose(obj).convert('RGB'))
     return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
 
@@ -78,7 +81,7 @@ def bounded_region(
     image: np.ndarray,
     xyxy: tuple[int, int, int, int],
     id: int = 0,
-    origin: str = "Manual",
+    origin: str = 'Manual',
     interior: Optional[np.ndarray] = None,
 ) -> Region:
     """Crea una Region a partir de dos esquinas (x1, y1, x2, y2), en cualquier orden.
@@ -383,21 +386,14 @@ def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarra
     return chosen
 
 
-def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, float]:
-    """Estima el fondo próximo a letras, no toda la viñeta.
-
-    Varianza y densidad de bordes se calculan excluyendo trazos marcados y
-    una pequeña separación alrededor de la máscara.
+def _zona_de_fondo(region: Region, mask: np.ndarray) -> np.ndarray:
+    """Píxeles de fondo que rodean a las letras: hasta 14 px de la máscara,
+    dejando 3 px de separación para no medir el borde de los trazos.
     """
-    roi = image[region.y : region.y + region.h, region.x : region.x + region.w]
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     allowed = inner_area(region) > 0
-    mask = region.mask if region.mask is not None else np.zeros(gray.shape, np.uint8)
     exclusion = cv2.dilate(mask, np.ones((7, 7), np.uint8)) > 0
     if cv2.countNonZero(mask):
-        nearest = (
-            cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (29, 29))) > 0
-        )
+        nearest = cv2.dilate(mask, _disco(29)) > 0
         valid = allowed & nearest & ~exclusion
     else:
         valid = allowed.copy()
@@ -405,7 +401,55 @@ def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, 
         valid = allowed & ~exclusion
     if int(valid.sum()) < 40:
         valid = allowed
+    return valid
+
+
+def _entropia(valores: np.ndarray) -> float:
+    """Entropía (bits) del histograma de grises en 32 niveles de 8 tonos cada uno.
+
+    Papel liso: casi todos los píxeles caen en uno o dos niveles (≈ 0-1 bit).
+    Trama o dibujo: los tonos se reparten en muchos niveles (≈ 2-5 bits).
+    """
+    if not valores.size:
+        return 0.0
+    p = np.bincount(valores.astype(np.int64) // 8, minlength=32) / valores.size
+    p = p[p > 0]
+    return float(-(p * np.log2(p)).sum())
+
+
+def _textura_repartida(gray: np.ndarray, zona: np.ndarray) -> float:
+    """Fracción de la zona donde el gris varía en una ventana de 7 × 7 px
+    (desviación estándar local mayor que 10).
+
+    Distingue una trama rala pero repartida, que varía en casi toda la zona,
+    de un papel liso cruzado por una sola línea, que solo varía cerca de ella.
+    El histograma (y por tanto la entropía) de ambos casos puede ser igual.
+    """
+    if not zona.any():
+        return 0.0
+    g = gray.astype(np.float32)
+    media = cv2.blur(g, (7, 7))
+    varianza = cv2.blur(g * g, (7, 7)) - media * media
+    return float((np.sqrt(np.maximum(varianza, 0))[zona] > 10).mean())
+
+
+def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, float]:
+    """Mide el fondo próximo a las letras (no toda la viñeta) y lo clasifica.
+
+    Calcula, sin contar los trazos marcados ni una pequeña separación a su
+    alrededor, la entropía, el tono oscuro (percentil 10) y la textura repartida
+    que usa el selector, además de la varianza y la densidad de bordes que se
+    informan en el reporte. Devuelve (clase, entropía, tono oscuro).
+    """
+    roi = image[region.y : region.y + region.h, region.x : region.x + region.w]
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    mask = region.mask if region.mask is not None else np.zeros(gray.shape, np.uint8)
+    valid = _zona_de_fondo(region, mask)
     vals = gray[valid]
+    entropy = _entropia(vals)
+    dark_level = float(np.percentile(vals, 10)) if vals.size else 255.0
+    texture = _textura_repartida(gray, valid)
+    # Varianza sin el 8 % más claro ni el 8 % más oscuro (menos sensible a manchas).
     if vals.size > 50:
         lo, hi = np.percentile(vals, [8, 92])
         core = vals[(vals >= lo) & (vals <= hi)]
@@ -414,24 +458,56 @@ def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, 
     var = float(np.var(vals)) if vals.size else 0.0
     edge = cv2.Canny(gray, 75, 170) > 0
     edge_density = float(edge[valid].mean()) if valid.any() else 0.0
-    coverage = float(cv2.countNonZero(mask) / max(1, np.count_nonzero(allowed)))
-    name, method, reason = classify_background(var, edge_density, coverage)
+    allowed = inner_area(region)
+    coverage = float(cv2.countNonZero(mask) / max(1, cv2.countNonZero(allowed)))
+    name, method, reason = classify_background(entropy, dark_level, coverage, texture)
     region.review_reason = reason
     region.variance = var
     region.edge_density = edge_density
+    region.entropy = entropy
+    region.dark_level = dark_level
+    region.texture = texture
     region.classification = name
     region.suggested_method = method
-    return name, var, edge_density
+    return name, entropy, dark_level
+
+
+# Umbrales del selector. ENTROPIA_LISO y TONO_TINTA se calculan con
+# `python -m evaluacion.calibrar_selector` a partir de pares sintéticos de
+# desarrollo (semilla 7) y de las regiones reales etiquetadas; los pares de la
+# evaluación (semilla 2026) no se usan. TEXTURA_REPARTIDA no cambia ninguna
+# región de desarrollo (da lo mismo entre 0,6 y 0,95), así que se fija en el
+# medio: solo aparta del «Uniforme» las tramas ralas que cubren toda la zona,
+# como la del globo «¿QUÉ PASÓ?» de la página de ejemplo.
+ENTROPIA_LISO = 1.5  # bits: por debajo, el fondo es papel liso
+TONO_TINTA = (
+    40  # gris: si el 10 % más oscuro del fondo baja de aquí, hay tinta de dibujo
+)
+TEXTURA_REPARTIDA = 0.8  # fracción de la zona con variación local: más, es una trama
 
 
 def classify_background(
-    variance: float, edge_density: float, coverage: float = 0.0
+    entropy: float,
+    dark_level: float,
+    coverage: float = 0.0,
+    texture: float = 0.0,
+    umbrales: Optional[tuple[float, float]] = None,
 ) -> tuple[str, str, str]:
     """Regla del selector: devuelve (clase, método sugerido, motivo de revisión).
 
-    variance y edge_density describen el fondo cercano al texto. coverage es la
+    entropy (bits), dark_level (percentil 10 de gris) y texture (fracción con
+    variación local) describen el fondo cercano al texto. coverage es la
     fracción del área útil que cubre la máscara; con coverage = 0 se aplica solo
-    la regla de fondo (así la usa la evaluación del selector).
+    la regla de fondo (así la usa la evaluación). umbrales = (entropía, tono)
+    reemplaza a ENTROPIA_LISO y TONO_TINTA; solo lo usa la calibración para
+    probar otros valores.
+
+    - Uniforme: pocos tonos (entropía baja) y sin una trama que cubra toda la
+      zona. Basta rellenar con la mediana.
+    - Complejo: hay tinta casi negra cerca de las letras, como los trazos de un
+      dibujo. Se deja para revisión manual.
+    - Estructurado: muchos tonos pero sin negro, como una trama, un rayado fino
+      o un degradado. Se reconstruye con inpainting.
     """
     # Guardarraíl: una máscara que cubre gran parte de su zona puede estar
     # incluyendo dibujo o borde, no solo letras.
@@ -441,9 +517,10 @@ def classify_background(
             'Revisión manual',
             f'La máscara cubre {coverage:.0%} del área útil. Revísala antes de limpiar.',
         )
-    if variance < 120 and edge_density < 0.055:
+    entropia_liso, tono_tinta = umbrales or (ENTROPIA_LISO, TONO_TINTA)
+    if entropy < entropia_liso and texture < TEXTURA_REPARTIDA:
         return 'Uniforme', 'Relleno local', ''
-    if variance < 2600 and edge_density < 0.21:
+    if dark_level >= tono_tinta:
         return 'Estructurado', 'Inpainting Telea', ''
     return (
         'Complejo / revisar',

@@ -31,6 +31,7 @@ from PIL import Image, ImageDraw
 from panelclean import __version__
 from panelclean import vision as V
 
+from . import calibrar_selector
 from . import metricas as M
 from . import muestreo
 from . import sinteticos as S
@@ -96,7 +97,9 @@ def evaluar_sinteticos(pares: list[S.Par]) -> tuple[list[dict], list[dict]]:
         xs = slice(region.x, region.x + region.w)
         prediccion = region.mask.copy()
         referencia = (par.referencia[ys, xs] > 0).astype(np.uint8) * 255
-        regla = V.classify_background(region.variance, region.edge_density)[0]
+        regla = V.classify_background(
+            region.entropy, region.dark_level, texture=region.texture
+        )[0]
         filas_mascara.append(
             {
                 'par': i,
@@ -108,6 +111,9 @@ def evaluar_sinteticos(pares: list[S.Par]) -> tuple[list[dict], list[dict]]:
                 'exceso': M.exceso(prediccion, referencia),
                 'selector': clase_simple(regla),
                 'selector_app': region.classification,
+                'entropia': region.entropy,
+                'tono_oscuro': region.dark_level,
+                'textura': region.texture,
                 'varianza': region.variance,
                 'densidad_bordes': region.edge_density,
                 'texto': par.texto,
@@ -150,7 +156,9 @@ def evaluar_sinteticos(pares: list[S.Par]) -> tuple[list[dict], list[dict]]:
             region.mask = mascara.copy()
             V.describe_background(par.con_texto, region)
             predicha = clase_simple(
-                V.classify_background(region.variance, region.edge_density)[0]
+                V.classify_background(
+                    region.entropy, region.dark_level, texture=region.texture
+                )[0]
             )
             for metodo in METODOS:
                 salida, usado, _ = V.clean_region(
@@ -213,9 +221,11 @@ def resumen_selector(filas: list[dict]) -> tuple[str, float]:
     revisar = sum(f['selector_app'] == 'Revisar máscara' for f in filas)
     partes = ['## 2. Selector de estrategia (pares sintéticos)', '']
     partes.append(
-        'La clase real es la del fondo generado. Se evalúa la regla de varianza y '
-        'densidad de bordes (`classify_background`) sin el aviso de «Revisar máscara», '
-        'que no es una clase de fondo.'
+        'La clase real es la del fondo generado. Se evalúa la regla de entropía y '
+        'tono oscuro (`classify_background`) sin el aviso de «Revisar máscara», '
+        'que no es una clase de fondo. Sus umbrales se ajustaron con otros pares '
+        '(semilla 7, ver `calibrar_selector.py`), así que estos pares no se usaron '
+        'para ajustarla.'
     )
     partes.append('')
     partes.append(
@@ -630,11 +640,16 @@ def evaluar_selector_real(datos: list[dict]) -> tuple[list[dict], dict]:
             cache[ruta], (t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h'])
         )
         V.generate_mask(cache[ruta], region, V.Options())
-        regla = V.classify_background(region.variance, region.edge_density)[0]
+        regla = V.classify_background(
+            region.entropy, region.dark_level, texture=region.texture
+        )[0]
         filas.append(
             {
                 **e,
                 'selector': clase_simple(regla),
+                'entropia': round(region.entropy, 4),
+                'tono_oscuro': region.dark_level,
+                'textura': region.texture,
                 'estrato': estratos[k],
                 'peso': round(pesos[k], 4),
             }
@@ -642,8 +657,14 @@ def evaluar_selector_real(datos: list[dict]) -> tuple[list[dict], dict]:
     return filas, acuerdo
 
 
-def resumen_selector_real(filas: list[dict], acuerdo: dict) -> tuple[str, float | None]:
-    """Sección del selector con datos reales. Devuelve (texto, macro-F1 ponderado o None)."""
+def resumen_selector_real(
+    filas: list[dict], acuerdo: dict, cv: dict | None
+) -> tuple[str, float | None]:
+    """Sección del selector con datos reales.
+
+    cv es el resultado de calibrar_selector.validacion_cruzada. Devuelve (texto,
+    macro-F1 ponderado de la validación cruzada, o None si no hay etiquetas).
+    """
     partes = ['## 7. Selector con regiones reales (OpenMantra, etiquetadas a mano)', '']
     if not filas:
         partes.append(
@@ -689,6 +710,22 @@ def resumen_selector_real(filas: list[dict], acuerdo: dict) -> tuple[str, float 
     )
     partes.append('')
     partes.append(
+        'Los umbrales del selector se ajustaron con estas mismas regiones (salvo '
+        f'las de la obra de prueba {LIBRO_PRUEBA}, que nunca se usan para ajustar) y '
+        'con pares sintéticos de desarrollo (ver `calibrar_selector.py`), así que los '
+        'valores de arriba son optimistas. La estimación honesta es la **validación '
+        'cruzada por obra**: para cada obra se ajustan los umbrales sin ella y se '
+        f'mide en ella. Macro-F1 ponderado: **{num(cv["macro_f1"])}** · F1 por clase: '
+        + ' · '.join(f'{c} {num(v)}' for c, v in cv['f1'].items())
+        + '. Umbrales de cada ajuste (entropía en bits · tono oscuro): '
+        + ' · '.join(
+            f'sin {libro} {num(e, 1)} · {t:.0f}'
+            for libro, (e, t) in cv['umbrales'].items()
+        )
+        + '.'
+    )
+    partes.append('')
+    partes.append(
         tabla(
             ['Estrato', 'Etiquetadas', 'Regiones en OpenMantra'],
             [[h, n, N] for h, (n, N) in acuerdo['por_estrato'].items()],
@@ -702,7 +739,7 @@ def resumen_selector_real(filas: list[dict], acuerdo: dict) -> tuple[str, float 
             f'({num(100 * acuerdo["acuerdos"] / acuerdo["dobles"], 0)} %). '
             'Las que no coinciden quedan fuera hasta resolverlas.'
         )
-    return '\n'.join(partes), macro
+    return '\n'.join(partes), cv['macro_f1']
 
 
 # ---------------------------------------------------------------------------
@@ -796,13 +833,21 @@ def main() -> None:
     avance('Selector con regiones reales…')
     filas_real, acuerdo = evaluar_selector_real(datos)
     guardar_csv('selector_real.csv', filas_real)
+    cv_real = None
+    if filas_real:
+        avance('Validación cruzada del selector por obra…')
+        cv_real = calibrar_selector.validacion_cruzada(
+            calibrar_selector.descriptores_sinteticos(),
+            calibrar_selector.descriptores_reales(filas_real),
+            LIBRO_PRUEBA,
+        )
 
     texto_mascara, iou_medio = resumen_mascara(filas_mascara)
     texto_selector, macro_sint = resumen_selector(filas_mascara)
     texto_limpieza, clave = resumen_limpieza(filas_limpieza)
     texto_det, f1_det, f1_prueba = resumen_deteccion(filas_det)
     texto_tiempo, t_max = resumen_rendimiento(filas_tiempo)
-    texto_real, macro_real = resumen_selector_real(filas_real, acuerdo)
+    texto_real, macro_real = resumen_selector_real(filas_real, acuerdo, cv_real)
 
     def cumple(ok: bool) -> str:
         return 'Sí' if ok else 'No'
@@ -834,7 +879,7 @@ def main() -> None:
             cumple(macro_sint >= 0.80),
         ],
         [
-            'Selector (macro-F1, regiones reales)',
+            'Selector (macro-F1, regiones reales, validación cruzada por obra)',
             '≥ 0,80',
             num(macro_real) if macro_real is not None else 'pendiente',
             cumple(macro_real >= 0.80) if macro_real is not None else '—',

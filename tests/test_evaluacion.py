@@ -6,9 +6,11 @@ Ejecutar desde la raíz del repositorio:
 
 import math
 import unittest
+from unittest import mock
 
 import numpy as np
 
+from evaluacion import calibrar_selector as C
 from evaluacion import evaluar as E
 from evaluacion import metricas as M
 from evaluacion import muestreo
@@ -127,10 +129,87 @@ class SelectorTest(unittest.TestCase):
         )
 
     def test_regla_del_selector(self):
-        self.assertEqual(V.classify_background(50, 0.01)[0], 'Uniforme')
-        self.assertEqual(V.classify_background(500, 0.10)[0], 'Estructurado')
-        self.assertEqual(V.classify_background(5000, 0.30)[0], 'Complejo / revisar')
-        self.assertEqual(V.classify_background(50, 0.01, 0.5)[0], 'Revisar máscara')
+        # (entropía en bits, tono oscuro): papel, trama gris y dibujo con tinta.
+        self.assertEqual(V.classify_background(0.3, 250)[0], 'Uniforme')
+        self.assertEqual(V.classify_background(2.8, 150)[0], 'Estructurado')
+        self.assertEqual(V.classify_background(3.5, 5)[0], 'Complejo / revisar')
+        self.assertEqual(V.classify_background(0.3, 250, 0.5)[0], 'Revisar máscara')
+        # Trama rala: pocos tonos, pero repartida por toda la zona.
+        self.assertEqual(
+            V.classify_background(0.8, 170, texture=0.97)[0], 'Estructurado'
+        )
+        # La calibración puede probar otros umbrales sin tocar los de la aplicación.
+        self.assertEqual(
+            V.classify_background(2.8, 150, umbrales=(3.0, 40))[0], 'Uniforme'
+        )
+
+    def test_entropia(self):
+        self.assertEqual(V._entropia(np.full(100, 250, np.uint8)), 0.0)
+        # Los 256 tonos por igual llenan los 32 niveles: log2(32) = 5 bits.
+        self.assertAlmostEqual(V._entropia(np.arange(256, dtype=np.uint8)), 5.0)
+
+    def test_textura_repartida(self):
+        papel = np.full((60, 60), 245, np.uint8)
+        zona = np.ones(papel.shape, bool)
+        self.assertEqual(V._textura_repartida(papel, zona), 0.0)
+        # Una sola línea: solo varía cerca de ella.
+        linea = papel.copy()
+        linea[30, :] = 60
+        self.assertLess(V._textura_repartida(linea, zona), 0.3)
+        # Rayado fino cada 5 px: varía en toda la zona.
+        rayado = papel.copy()
+        rayado[::5, :] = 150
+        self.assertGreater(V._textura_repartida(rayado, zona), 0.9)
+
+    def test_calibracion_encuentra_umbrales_que_separan(self):
+        def filas(libro, n=4):
+            return [
+                {
+                    'libro': libro,
+                    'clase': c,
+                    'peso': 1.0,
+                    'entropia': e,
+                    'tono_oscuro': t,
+                    'textura': 0.0,
+                }
+                for c, e, t in (
+                    ('Uniforme', 0.4, 245),
+                    ('Estructurado', 2.6, 130),
+                    ('Complejo', 3.6, 8),
+                )
+                for _ in range(n)
+            ]
+
+        reales = filas('a') + filas('b') + filas('c')
+        umbrales = C.ajustar(filas('sintético'), reales)
+        self.assertEqual(C.macro_f1(reales, umbrales), 1.0)
+        self.assertTrue(0.4 < umbrales[0] <= 2.6 and 8 < umbrales[1] <= 130)
+        cv = C.validacion_cruzada(filas('sintético'), reales)
+        self.assertEqual(cv['macro_f1'], 1.0)
+        self.assertEqual(set(cv['umbrales']), {'a', 'b', 'c'})
+
+    def test_la_obra_de_prueba_nunca_se_usa_para_ajustar(self):
+        reales = [
+            {
+                'libro': libro,
+                'clase': c,
+                'peso': 1.0,
+                'entropia': e,
+                'tono_oscuro': t,
+                'textura': 0.0,
+            }
+            for libro in ('a', 'b', 'prueba')
+            for c, e, t in (('Uniforme', 0.4, 245), ('Complejo', 3.6, 8))
+        ]
+        with mock.patch.object(C, 'ajustar', wraps=C.ajustar) as ajustar:
+            cv = C.validacion_cruzada(reales[:2], reales, reservada='prueba')
+        usadas = {
+            f['libro'] for llamada in ajustar.call_args_list for f in llamada.args[1]
+        }
+        self.assertNotIn('prueba', usadas)
+        self.assertIn(
+            'prueba', cv['umbrales']
+        )  # se predice, pero no se ajusta con ella
 
     def test_bootstrap(self):
         media, inf, sup = M.intervalo_bootstrap([3.0] * 10)

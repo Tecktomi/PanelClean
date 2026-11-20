@@ -19,7 +19,7 @@ Tarda alrededor de un minuto en un portátil. Con `--rapido` corre una versión 
 |---|---|---|---|---|---|
 | 1 | Detección: precisión, recall, F1 | T1.2.3 | OpenMantra, 214 páginas | Una caja de texto está acertada si ≥ 80 % de su área queda dentro de una región detectada; una detección es correcta si contiene así algún texto. Se informa también el F1 estándar (uno a uno, IoU ≥ 0,5) | F1 ≥ 0,85 |
 | 2 | Máscara: IoU, Dice, cobertura, exceso | T1.4.2 | 150 pares sintéticos | Contra los píxeles que el texto cambió respecto del fondo limpio, con los ajustes por defecto de la aplicación | IoU ≥ 0,80 |
-| 3 | Selector: exactitud, macro-F1, matriz de confusión | T2.4.4 | Sintéticos (clase por construcción) y regiones reales etiquetadas | Regla de varianza y densidad de bordes (`classify_background`), sin el aviso «Revisar máscara» | Macro-F1 ≥ 0,80 |
+| 3 | Selector: exactitud, macro-F1, matriz de confusión | T2.4.4 | Sintéticos (clase por construcción) y regiones reales etiquetadas | Regla de entropía, tono oscuro y textura (`classify_background`), sin el aviso «Revisar máscara». En reales se informa la validación cruzada por obra | Macro-F1 ≥ 0,80 |
 | 4 | Limpieza: MAE, PSNR, SSIM | T2.4.1 | Sintéticos | Salida vs. fondo limpio, en gris, dentro de la selección | Sin meta |
 | 5 | Conservación | T2.4.2 | Sintéticos | Píxeles cambiados fuera de la máscara; además, fondo sano alterado dentro de ella | 0 píxeles |
 | 6 | Rendimiento | T2.4.3 | 20 páginas de OpenMantra ampliadas a 2048 px | Tiempo de detectar, crear máscaras y limpiar en automático | ≤ 15 s/página |
@@ -43,6 +43,7 @@ Son 50 pares por clase, siempre los mismos (semilla 2026). Las frases salen de l
 - **Tres métricas para la hipótesis.** El MAE favorece por construcción el relleno con la mediana (la mediana minimiza el error absoluto) aunque borre la textura; el SSIM sí mide si la textura se conserva.
 - **Adaptativo comparable en todos los pares.** La aplicación deja los fondos complejos para revisión manual. Para comparar en los mismos pares, el adaptativo usa Relleno local si el fondo se clasifica como Uniforme y Telea en otro caso. Aparte se informa cuántos pares deja la aplicación para revisión.
 - **Piso y techo.** *Sin limpiar* es el piso; el *oráculo por par* (el mejor método único en cada par) es el techo de cualquier selector.
+- **Selector calibrado sin mirar la prueba.** La regla mide el fondo en una franja de hasta 14 px alrededor de las letras: la *entropía* del histograma separa el papel liso del resto, y el *tono oscuro* (percentil 10) separa el dibujo, que tiene tinta casi negra, de la trama o el degradado, que no la tienen. Una tercera medida, la *textura repartida* (fracción de la franja que varía en ventanas de 7 × 7 px), evita confundir con papel una trama rala que cubre toda la franja. Los umbrales se calculan con `calibrar_selector.py` a partir de pares sintéticos de desarrollo (semilla 7) y de las regiones reales etiquetadas, sin la obra de prueba. Como las regiones reales sirven para ajustar y para medir, el valor que cuenta es la validación cruzada por obra: se ajusta sin una obra y se mide en ella. La varianza y la densidad de bordes de la regla anterior se descartaron porque en manga real las tramas son finas y de poco contraste: la regla las tomaba por papel liso y, en los sintéticos, tomaba las tramas por dibujo.
 - **Detección por cobertura.** Para limpiar, lo que importa es que el texto quede dentro de la región; el IoU castiga que el globo detectado sea más grande que el texto. Por eso el criterio principal es la cobertura, y el IoU ≥ 0,5 se informa como referencia.
 - **Sin dependencias nuevas.** El SSIM está programado con OpenCV según Wang et al. (2004); las métricas tienen pruebas en `tests/test_evaluacion.py`.
 
@@ -75,6 +76,7 @@ Se abre una ventana con una región por vez. La pregunta es **qué hay detrás d
 | `sinteticos.py` | Generador de pares sintéticos. `python -m evaluacion.sinteticos` guarda algunos como PNG |
 | `metricas.py` | IoU, Dice, MAE, PSNR, SSIM, F1 de detección, macro-F1 y bootstrap |
 | `evaluar.py` | Corre todo y escribe `resultados/` |
+| `calibrar_selector.py` | Calcula los umbrales del selector y su validación cruzada por obra (`python -m evaluacion.calibrar_selector`) |
 | `etiquetar.py` | Ventana para etiquetar regiones reales |
 | `muestreo.py` | Estratos, orden de etiquetado y pesos |
 | `estratos.csv` | Medida y estrato de cada caja de texto de OpenMantra (se genera solo) |
