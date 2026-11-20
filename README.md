@@ -34,7 +34,7 @@ En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
 ## Estado de la beta
 
-La versión actual demuestra el flujo principal del proyecto. Todavía puede fallar cuando la selección incluye líneas del dibujo, marcos de viñetas o fondos muy complejos. Por eso la máscara se muestra antes de aplicar la limpieza y existe corrección manual.
+La versión actual demuestra el flujo principal del proyecto. Todavía puede fallar cuando la selección incluye líneas del dibujo, marcos de viñetas o fondos muy complejos, y no detecta el texto escrito sobre un fondo casi negro. Por eso la máscara se muestra antes de aplicar la limpieza y existe corrección manual.
 
 El informe breve `Informe_Hito2_PanelClean.pdf` resume el funcionamiento, la relación con TEL-328 y las mejoras pendientes.
 

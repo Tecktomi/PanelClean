@@ -212,11 +212,121 @@ def _line_protection(binary: np.ndarray) -> np.ndarray:
     return cv2.dilate(protected, np.ones((5, 5), np.uint8))
 
 
-def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarray:
-    """Máscara conservadora de tinta dentro del rectángulo elegido por usuario.
+# Parámetros de la máscara. Se ajustaron con pares sintéticos de desarrollo
+# (semilla 7), nunca con los de la evaluación (semilla 2026).
+PUNTOS_DE_TRAMA = 20  # cuántos puntos pequeños y finos indican una trama de fondo
+GROSOR_LETRA = (
+    2.0  # distancia al borde (px) que alcanzan los trazos de letra, no la trama
+)
+CONTRASTE_TEXTO = (
+    12  # cuánto más oscuro que su entorno debe ser un píxel para agrandar la máscara
+)
 
-    No identifica semánticamente letras: los candidatos se deben revisar.
-    Los trazos largos (bordes de viñeta/globo) se excluyen preventivamente.
+
+def _disco(diametro: int) -> np.ndarray:
+    """Elemento estructurante circular del diámetro dado (impar)."""
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (diametro, diametro))
+
+
+def _forma_de_letra(
+    ancho: int, alto: int, area: int, region: Region, min_area: int, max_area: float
+) -> bool:
+    """Indica si una componente tiene tamaño y forma de letra (no de línea ni de borde)."""
+    if not min_area <= area <= max_area:
+        return False
+    if ancho > region.w * 0.68 or alto > region.h * 0.81:
+        return False
+    if ancho > region.w * 0.45 and alto <= 3:
+        return False
+    if alto > region.h * 0.52 and ancho <= 2:
+        return False
+    return True
+
+
+def _rescatar_letras(
+    componente: np.ndarray,
+    grosor: np.ndarray,
+    region: Region,
+    min_area: int,
+    max_area: float,
+) -> np.ndarray:
+    """Separa letras que quedaron unidas a rayas o tramas del fondo.
+
+    Sobre un fondo rayado, las letras que tocan una raya forman con ella una sola
+    componente enorme, que el filtro de tamaño descartaría entera. Las rayas y
+    los puntos de trama son finos; los trazos de letra, más gruesos. Se conservan
+    los «núcleos» (píxeles a GROSOR_LETRA o más del borde), se les devuelve su
+    ancho con una dilatación limitada a la componente y las piezas resultantes
+    pasan otra vez el filtro de forma.
+    """
+    nucleos = (componente & (grosor >= GROSOR_LETRA)).astype(np.uint8) * 255
+    salida = np.zeros(componente.shape, np.uint8)
+    if not nucleos.any():
+        return salida
+    piezas = cv2.bitwise_and(
+        cv2.dilate(nucleos, _disco(5)), componente.astype(np.uint8) * 255
+    )
+    num, etiquetas, stats, _ = cv2.connectedComponentsWithStats(piezas, 8)
+    for k in range(1, num):
+        _, _, ancho, alto, area = [int(v) for v in stats[k]]
+        if _forma_de_letra(ancho, alto, area, region, min_area, max_area):
+            salida[etiquetas == k] = 255
+    return salida
+
+
+def _expandir(gris: np.ndarray, mascara: np.ndarray, pixeles: int) -> np.ndarray:
+    """Agranda la máscara para cubrir el borde suavizado de las letras.
+
+    Solo se agregan píxeles más oscuros que su entorno, medido con un black-hat
+    (cierre morfológico − imagen): así se cubre el antialias de las letras sin
+    repintar papel ni fondo sano alrededor.
+    """
+    if pixeles <= 0 or not mascara.any():
+        return mascara
+    agrandada = cv2.dilate(mascara, _disco(2 * pixeles + 1))
+    # El elemento del black-hat debe ser más ancho que los trazos de letra.
+    medio_trazo = float(
+        np.percentile(cv2.distanceTransform(mascara, cv2.DIST_L2, 3)[mascara > 0], 90)
+    )
+    lado = max(9, int(4 * medio_trazo) | 1)
+    black_hat = cv2.morphologyEx(gris, cv2.MORPH_BLACKHAT, _disco(lado))
+    return np.where((black_hat > CONTRASTE_TEXTO) | (mascara > 0), agrandada, 0).astype(
+        np.uint8
+    )
+
+
+def _contorno_blanco(
+    gris: np.ndarray, mascara: np.ndarray, permitido: np.ndarray
+) -> np.ndarray:
+    """Contorno blanco de las letras escritas sobre dibujo, si lo hay.
+
+    El texto sobre dibujo suele llevar un borde blanco que también hay que borrar.
+    Se busca solo cuando el entorno de las letras es oscuro (si no, el «borde»
+    sería simplemente el papel del globo): píxeles muy claros a 4 px o menos de
+    las letras.
+    """
+    if not mascara.any():
+        return np.zeros(mascara.shape, bool)
+    cerca = (cv2.dilate(mascara, _disco(9)) > 0) & (mascara == 0)
+    lejos = (
+        (cv2.dilate(mascara, _disco(21)) > 0)
+        & (cv2.dilate(mascara, _disco(13)) == 0)
+        & (permitido > 0)
+    )
+    if not lejos.any() or np.median(gris[lejos]) >= 190:
+        return np.zeros(mascara.shape, bool)
+    return cerca & (gris > 215)
+
+
+def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarray:
+    """Máscara de las letras dentro del rectángulo elegido por el usuario.
+
+    Pasos: umbral (Otsu o adaptativo), componentes conectadas con filtro de
+    tamaño y forma, rescate de letras unidas a rayas del fondo, descarte de
+    puntos de trama, expansión hacia el antialias de las letras y, sobre dibujo,
+    el contorno blanco del texto. Los trazos largos (bordes de viñeta o de
+    globo) se excluyen. No identifica letras por su significado: la máscara se
+    debe revisar.
     """
     roi = image[region.y : region.y + region.h, region.x : region.x + region.w]
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -234,33 +344,37 @@ def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarra
 
     protected = _line_protection(binary)
     num, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
-    chosen = np.zeros(binary.shape, np.uint8)
+    protegidas = set(np.unique(labels[protected > 0]).tolist())
+    # Grosor de cada componente: la mayor distancia de uno de sus píxeles al fondo.
+    grosor = cv2.distanceTransform(binary, cv2.DIST_L2, 3)
+    grosor_max = np.zeros(num)
+    np.maximum.at(grosor_max, labels.ravel(), grosor.ravel())
     area_roi = region.w * region.h
     min_area = max(2, int(3 + (8 - opts.sensitivity) * 0.7))
     max_area = min(area_roi * 0.22, max(260, area_roi * 0.11))
-    for k in range(1, num):
-        left, top, ww, hh, area = [int(v) for v in stats[k]]
-        if not min_area <= area <= max_area:
-            continue
-        if ww > region.w * 0.68 or hh > region.h * 0.81:
-            continue
-        if ww > region.w * 0.45 and hh <= 3:
-            continue
-        if hh > region.h * 0.52 and ww <= 2:
-            continue
-        component = labels == k
-        if np.any(protected[component]):
-            continue
-        # Nota: las componentes que tocan el borde de la región NO se descartan,
-        # porque con una selección ajustada las propias letras tocan ese borde.
-        # Proteger el contorno del globo queda pendiente (tarea T1.3.4).
-        chosen[component] = 255
+    # Muchos puntos pequeños y finos indican una trama de fondo, no letras.
+    puntos = (stats[1:, 4] < 30) & (grosor_max[1:] < GROSOR_LETRA)
+    hay_trama = int(puntos.sum()) >= PUNTOS_DE_TRAMA
 
-    if opts.expansion > 0:
-        width = opts.expansion * 2 + 1
-        chosen = cv2.dilate(
-            chosen, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (width, width))
-        )
+    chosen = np.zeros(binary.shape, np.uint8)
+    for k in range(1, num):
+        if k in protegidas:
+            continue
+        _, _, ancho, alto, area = [int(v) for v in stats[k]]
+        if _forma_de_letra(ancho, alto, area, region, min_area, max_area):
+            if hay_trama and area < 30 and grosor_max[k] < GROSOR_LETRA:
+                continue  # punto de la trama
+            # Las componentes que tocan el borde de la región NO se descartan,
+            # porque con una selección ajustada las propias letras tocan ese borde.
+            # Proteger el contorno del globo queda pendiente (tarea T1.3.4).
+            chosen[labels == k] = 255
+        elif area > max_area * 0.5:
+            # Demasiado grande: puede ser texto unido a rayas del fondo.
+            chosen |= _rescatar_letras(labels == k, grosor, region, min_area, max_area)
+
+    blanco = _contorno_blanco(gray, chosen, allowed)
+    chosen = _expandir(gray, chosen, opts.expansion)
+    chosen[blanco] = 255
     chosen = cv2.bitwise_and(chosen, allowed)
     chosen[protected > 0] = 0
     region.mask = chosen

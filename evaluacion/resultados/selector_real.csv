@@ -112,7 +112,7 @@ boureisougi,21,2,Uniforme,Uniforme,2,1.935
 boureisougi,18,9,Uniforme,Uniforme,1,1.0253
 tojime_no_siora,10,4,Uniforme,Uniforme,2,1.935
 rasetugari,40,1,Complejo,Uniforme,1,1.0253
-rasetugari,40,2,Complejo,Complejo,1,1.0253
+rasetugari,40,2,Complejo,Estructurado,1,1.0253
 boureisougi,2,0,Estructurado,Estructurado,1,1.0253
 boureisougi,5,4,Uniforme,Uniforme,2,1.935
 tencho_isoro,21,10,Uniforme,Uniforme,3,7.5714
@@ -138,7 +138,7 @@ rasetugari,43,4,Complejo,Complejo,1,1.0253
 rasetugari,22,2,Uniforme,Uniforme,2,1.935
 rasetugari,47,5,Uniforme,Uniforme,3,7.5714
 rasetugari,2,6,Uniforme,Uniforme,1,1.0253
-rasetugari,31,2,Complejo,Estructurado,1,1.0253
+rasetugari,31,2,Complejo,Complejo,1,1.0253
 boureisougi,20,2,Uniforme,Uniforme,2,1.935
 boureisougi,19,10,Uniforme,Uniforme,1,1.0253
 boureisougi,12,15,Uniforme,Uniforme,1,1.0253
@@ -166,7 +166,7 @@ boureisougi,14,4,Uniforme,Uniforme,1,1.0253
 boureisougi,5,2,Uniforme,Uniforme,1,1.0253
 boureisougi,19,0,Uniforme,Uniforme,1,1.0253
 boureisougi,31,1,Uniforme,Uniforme,3,7.5714
-boureisougi,12,13,Uniforme,Estructurado,1,1.0253
+boureisougi,12,13,Uniforme,Uniforme,1,1.0253
 balloon_dream,24,2,Uniforme,Uniforme,1,1.0253
 tojime_no_siora,24,5,Uniforme,Uniforme,1,1.0253
 balloon_dream,1,1,Complejo,Estructurado,1,1.0253
@@ -298,7 +298,7 @@ balloon_dream,5,8,Uniforme,Uniforme,2,1.935
 balloon_dream,37,7,Uniforme,Uniforme,4,8.6522
 balloon_dream,14,11,Uniforme,Uniforme,2,1.935
 balloon_dream,4,6,Uniforme,Uniforme,2,1.935
-rasetugari,23,5,Uniforme,Estructurado,2,1.935
+rasetugari,23,5,Uniforme,Uniforme,2,1.935
 boureisougi,32,8,Uniforme,Uniforme,2,1.935
 tojime_no_siora,9,10,Uniforme,Uniforme,2,1.935
 boureisougi,35,7,Uniforme,Uniforme,2,1.935
@@ -310,12 +310,12 @@ balloon_dream,36,3,Uniforme,Uniforme,4,8.6522
 tojime_no_siora,17,2,Uniforme,Uniforme,4,8.6522
 balloon_dream,9,3,Uniforme,Uniforme,2,1.935
 tojime_no_siora,18,5,Uniforme,Uniforme,2,1.935
-rasetugari,23,3,Uniforme,Complejo,2,1.935
+rasetugari,23,3,Uniforme,Estructurado,2,1.935
 boureisougi,12,7,Uniforme,Uniforme,2,1.935
 balloon_dream,27,5,Uniforme,Estructurado,2,1.935
 boureisougi,10,7,Uniforme,Uniforme,2,1.935
 boureisougi,31,8,Uniforme,Uniforme,2,1.935
-balloon_dream,23,6,Uniforme,Estructurado,2,1.935
+balloon_dream,23,6,Uniforme,Uniforme,2,1.935
 tencho_isoro,35,7,Uniforme,Uniforme,4,8.6522
 boureisougi,35,1,Uniforme,Uniforme,2,1.935
 boureisougi,4,7,Uniforme,Uniforme,2,1.935
@@ -329,7 +329,7 @@ rasetugari,22,0,Uniforme,Uniforme,4,8.6522
 boureisougi,17,9,Uniforme,Uniforme,2,1.935
 balloon_dream,28,11,Uniforme,Uniforme,2,1.935
 boureisougi,31,0,Uniforme,Uniforme,2,1.935
-tojime_no_siora,8,2,Uniforme,Complejo,2,1.935
+tojime_no_siora,8,2,Uniforme,Estructurado,2,1.935
 tojime_no_siora,8,1,Uniforme,Uniforme,2,1.935
 rasetugari,14,2,Uniforme,Uniforme,2,1.935
 boureisougi,16,4,Uniforme,Uniforme,2,1.935
