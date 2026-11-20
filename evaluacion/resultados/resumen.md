@@ -1,0 +1,153 @@
+# Resultados de la evaluación de PanelClean
+
+Generado con `python -m evaluacion.evaluar` · PanelClean 0.3.1-beta · Python 3.15.2 · OpenCV 4.14.0 · NumPy 2.5.5 · 150 pares sintéticos (semilla 2026) · 214 páginas de OpenMantra.
+
+Los intervalos entre corchetes son de confianza del 95 % (bootstrap). Los datos de cada par y cada página están en los CSV de esta carpeta; `ejemplos.png` muestra algunos pares.
+
+## Resumen frente a las metas del Hito 1
+
+| Métrica | Meta | Resultado | ¿Cumple? |
+|---|---|---|---|
+| Detección (F1, todas las obras) | ≥ 0,85 | 0,54 | No |
+| Detección (F1, obra de prueba tencho_isoro) | ≥ 0,85 | 0,68 | No |
+| Máscara (IoU medio, sintéticos) | ≥ 0,80 | 0,49 | No |
+| Selector (macro-F1, sintéticos) | ≥ 0,80 | 0,57 | No |
+| Selector (macro-F1, regiones reales) | ≥ 0,80 | 0,53 | No |
+| Reconstrucción (MAE/PSNR/SSIM) | sin meta | ver sección 3 | — |
+| Conservación (píxeles fuera de la máscara) | 0 | 0 | Sí |
+| Rendimiento (máximo por página de 2048 px) | ≤ 15 s | 0,34 s | Sí |
+| Hipótesis: adaptativo vs. mejor método único (máscara perfecta) | adaptativo mejor | MAE: peor · PSNR: sin diferencia significativa · SSIM: peor | — |
+| Hipótesis: adaptativo vs. mejor método único (máscara del sistema) | adaptativo mejor | MAE: peor · PSNR: sin diferencia significativa · SSIM: peor | — |
+
+## 1. Máscara de texto (pares sintéticos)
+
+Referencia: los píxeles que el texto cambió respecto del fondo limpio (diferencia mayor que 8 niveles de gris), borde blanco incluido. La máscara se genera con los ajustes por defecto de la aplicación. *Cobertura* = parte del texto que queda dentro de la máscara (lo que falta queda como resto); *exceso* = parte de la máscara que no era texto.
+
+| Fondo | Pares | IoU [IC 95 %] | Dice | Cobertura | Exceso |
+|---|---|---|---|---|---|
+| Uniforme | 50 | 0,77 [0,76; 0,77] | 0,87 | 1,00 | 0,23 |
+| Estructurado | 50 | 0,40 [0,33; 0,48] | 0,51 | 0,64 | 0,49 |
+| Complejo | 50 | 0,29 [0,24; 0,34] | 0,41 | 0,41 | 0,46 |
+| Con borde blanco | 44 | 0,46 [0,43; 0,49] | 0,63 | 0,66 | 0,35 |
+| Sin borde blanco | 106 | 0,50 [0,44; 0,56] | 0,58 | 0,69 | 0,41 |
+| **Todos** | 150 | 0,49 [0,44; 0,53] | 0,60 | 0,68 | 0,39 |
+
+## 2. Selector de estrategia (pares sintéticos)
+
+La clase real es la del fondo generado. Se evalúa la regla de varianza y densidad de bordes (`classify_background`) sin el aviso de «Revisar máscara», que no es una clase de fondo.
+
+| Real \ Predicha | Uniforme | Estructurado | Complejo | F1 |
+|---|---|---|---|---|
+| Uniforme | 50 | 0 | 0 | 0,91 |
+| Estructurado | 7 | 4 | 39 | 0,14 |
+| Complejo | 3 | 4 | 43 | 0,65 |
+
+Exactitud: **0,65** · Macro-F1: **0,57** · Regiones con aviso «Revisar máscara» en la aplicación: 19 de 150.
+
+## 3. Limpieza e hipótesis central (pares sintéticos)
+
+Se comparan la salida y el fondo limpio en escala de grises, dentro de la selección. MAE en niveles de gris (0-255, menor es mejor); PSNR en dB y SSIM (mayor es mejor). Ojo: el MAE favorece por construcción el relleno con la mediana (la mediana es el valor que minimiza el error absoluto), aunque borre la textura; el SSIM sí mide si la textura se conserva. Por eso la hipótesis se juzga con las tres.
+
+Estrategias: los tres métodos únicos; el **adaptativo (selector actual)**, que usa Relleno local si la regla clasifica el fondo como Uniforme y Telea en otro caso; el **adaptativo (clase real)**, igual pero con la clase verdadera del fondo (lo que lograría un clasificador perfecto), y el **oráculo por par**, que elige el mejor método único de cada par según el MAE (techo). Todas se miden en los mismos pares.
+
+### Con la máscara perfecta (aísla la elección del método)
+
+| Estrategia | MAE [IC 95 %] | PSNR (dB) | SSIM |
+|---|---|---|---|
+| Sin limpiar | 30,71 [29,27; 32,21] | 10,8 | 0,633 |
+| Relleno local | 8,58 [7,12; 10,09] | 29,3 | 0,866 |
+| Inpainting Telea | 6,53 [5,56; 7,55] | 30,8 | 0,900 |
+| Inpainting NS | 6,39 [5,43; 7,38] | 30,6 | 0,902 |
+| Adaptativo (selector actual) | 6,53 [5,55; 7,55] | 31,1 | 0,900 |
+| Adaptativo (clase real) | 6,51 [5,53; 7,53] | 31,3 | 0,901 |
+| Oráculo por par | 5,97 [5,05; 6,93] | 31,2 | 0,899 |
+
+Por clase de fondo (MAE · SSIM):
+
+| Fondo | Sin limpiar | Relleno local | Inpainting Telea | Inpainting NS | Adaptativo (selector actual) | Adaptativo (clase real) |
+|---|---|---|---|---|---|---|
+| Uniforme | 32,19 · 0,535 | 0,21 · 0,992 | 0,28 · 0,989 | 0,29 · 0,990 | 0,21 · 0,992 | 0,21 · 0,992 |
+| Estructurado | 30,23 · 0,691 | 8,88 · 0,813 | 9,83 · 0,840 | 9,68 · 0,843 | 9,88 · 0,837 | 9,83 · 0,840 |
+| Complejo | 29,71 · 0,674 | 16,64 · 0,793 | 9,49 · 0,871 | 9,22 · 0,873 | 9,49 · 0,871 | 9,49 · 0,871 |
+
+**Hipótesis** (adaptativo con el selector actual vs. mejor método único):
+
+- MAE: mejor método único = Inpainting NS; adaptativo − Inpainting NS = 0,13 [0,08; 0,19] → **peor**.
+- PSNR: mejor método único = Inpainting Telea; adaptativo − Inpainting Telea = 0,3 [-0,0; 0,6] → **sin diferencia significativa**.
+- SSIM: mejor método único = Inpainting NS; adaptativo − Inpainting NS = -0,002 [-0,004; -0,001] → **peor**.
+
+En la aplicación, el modo automático deja para revisión manual (sin limpiar) 0 de 50 pares uniformes, 39 de 50 pares estructurados, 47 de 50 pares complejos.
+
+### Con la máscara del sistema (resultado que obtiene el usuario)
+
+| Estrategia | MAE [IC 95 %] | PSNR (dB) | SSIM |
+|---|---|---|---|
+| Sin limpiar | 30,71 [29,27; 32,21] | 10,8 | 0,633 |
+| Relleno local | 20,16 [16,84; 23,40] | 25,9 | 0,718 |
+| Inpainting Telea | 20,85 [17,41; 24,22] | 25,3 | 0,721 |
+| Inpainting NS | 20,80 [17,35; 24,14] | 25,4 | 0,723 |
+| Adaptativo (selector actual) | 20,72 [17,28; 24,07] | 26,0 | 0,721 |
+| Adaptativo (clase real) | 20,82 [17,36; 24,19] | 26,1 | 0,723 |
+| Oráculo por par | 20,08 [16,77; 23,34] | 26,2 | 0,720 |
+
+Por clase de fondo (MAE · SSIM):
+
+| Fondo | Sin limpiar | Relleno local | Inpainting Telea | Inpainting NS | Adaptativo (selector actual) | Adaptativo (clase real) |
+|---|---|---|---|---|---|---|
+| Uniforme | 32,19 · 0,535 | 0,25 · 0,990 | 0,36 · 0,986 | 0,31 · 0,988 | 0,25 · 0,990 | 0,25 · 0,990 |
+| Estructurado | 30,23 · 0,691 | 26,30 · 0,546 | 27,13 · 0,555 | 27,07 · 0,556 | 26,87 · 0,550 | 27,13 · 0,555 |
+| Complejo | 29,71 · 0,674 | 33,92 · 0,618 | 35,08 · 0,623 | 35,01 · 0,624 | 35,04 · 0,623 | 35,08 · 0,623 |
+
+**Hipótesis** (adaptativo con el selector actual vs. mejor método único):
+
+- MAE: mejor método único = Relleno local; adaptativo − Relleno local = 0,56 [0,31; 0,88] → **peor**.
+- PSNR: mejor método único = Relleno local; adaptativo − Relleno local = 0,0 [-0,1; 0,2] → **sin diferencia significativa**.
+- SSIM: mejor método único = Inpainting NS; adaptativo − Inpainting NS = -0,002 [-0,004; -0,000] → **peor**.
+
+En la aplicación, el modo automático deja para revisión manual (sin limpiar) 0 de 50 pares uniformes, 41 de 50 pares estructurados, 45 de 50 pares complejos.
+
+## 4. Conservación
+
+Píxeles modificados fuera de la máscara, en todas las limpiezas: **máximo 0** (meta: 0). Dentro de la máscara del sistema, los métodos alteraron de forma visible (más de 8 niveles) en promedio 614,2 píxeles de fondo sano por par: es el costo de que la máscara marque algo más que el texto.
+
+## 5. Detección de texto (OpenMantra)
+
+Detector actual: `detect_bubbles` (heurístico, busca globos ovalados). Una caja de texto está acertada si al menos el 80 % queda dentro de una región detectada; una detección es correcta si contiene así algún texto. Como referencia se incluye el F1 con el criterio estándar (emparejamiento uno a uno con IoU ≥ 0,5), que castiga que el globo sea mucho más grande que el texto.
+
+| Obra | Páginas | Textos | Detecciones | Precisión | Recall | F1 | F1 (IoU ≥ 0,5) |
+|---|---|---|---|---|---|---|---|
+| tojime_no_siora | 46 | 334 | 533 | 0,45 | 0,72 | **0,55** | 0,22 |
+| balloon_dream | 38 | 314 | 175 | 0,58 | 0,40 | **0,48** | 0,14 |
+| tencho_isoro (prueba) | 40 | 311 | 206 | 0,83 | 0,58 | **0,68** | 0,20 |
+| boureisougi | 36 | 274 | 63 | 0,79 | 0,21 | **0,33** | 0,15 |
+| rasetugari | 54 | 359 | 400 | 0,52 | 0,62 | **0,57** | 0,23 |
+| **Todas** | 214 | 1592 | 1377 | 0,56 | 0,52 | **0,54** | 0,20 |
+
+## 6. Rendimiento
+
+20 páginas de OpenMantra repartidas entre las cinco obras, ampliadas a 2048 px de lado mayor. Se mide detectar regiones, crear sus máscaras y limpiarlas en modo automático (sin contar abrir el archivo).
+
+| Mediana (s) | Máximo (s) | Regiones por página (media) | Meta |
+|---|---|---|---|
+| 0,12 | 0,34 | 7,8 | ≤ 15 s |
+
+Equipo: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz, 8 hilos, Windows 10.
+
+## 7. Selector con regiones reales (OpenMantra, etiquetadas a mano)
+
+Casi todo el texto de OpenMantra está en globos blancos, así que al etiquetar se muestran más seguido las regiones con fondo cargado (muestreo por estratos, ver `muestreo.py`). La tabla muestra los conteos reales de regiones etiquetadas; el F1, la exactitud y el macro-F1 están **ponderados** para estimar el resultado en todo OpenMantra.
+
+| Real \ Predicha | Uniforme | Estructurado | Complejo | F1 (ponderado) |
+|---|---|---|---|---|
+| Uniforme | 302 | 15 | 3 | 0,98 |
+| Estructurado | 7 | 4 | 0 | 0,12 |
+| Complejo | 5 | 8 | 13 | 0,51 |
+
+357 regiones, etiquetadas por 1 persona(s). Exactitud ponderada: **0,95** · Macro-F1 ponderado: **0,53** (sin ponderar: 0,59). Aún hay pocas regiones de: Estructurado (meta: 15 de cada una).
+
+| Estrato | Etiquetadas | Regiones en OpenMantra |
+|---|---|---|
+| 1 | 79 | 81 |
+| 2 | 123 | 238 |
+| 3 | 63 | 477 |
+| 4 | 92 | 796 |

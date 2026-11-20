@@ -28,7 +28,7 @@ Esta carpeta contiene material que **no fue creado por el equipo de PanelClean**
 
 ### Uso en PanelClean
 
-Está previsto para entrenar y evaluar la detección automática de texto (tarea T1.2.3 de la bitácora). Por ahora el código de PanelClean no lo lee. Para medir la detección sin sobreajustar, las páginas de una misma obra deben quedar todas en el mismo conjunto (entrenamiento, validación o prueba).
+La evaluación (`evaluacion/`) lo usa para medir la detección de texto y el tiempo por página, como fuente de las frases japonesas de los pares sintéticos y para etiquetar a mano el fondo de regiones reales. Más adelante puede servir para entrenar un detector (tarea T1.2.3). Para medir sin sobreajustar, las páginas de una misma obra deben quedar todas en el mismo conjunto (entrenamiento, validación o prueba); la obra `tencho_isoro` está reservada como conjunto de prueba.
 
 El uso es académico (curso TEL-328, UTFSM). La licencia no permite usar este material con fines comerciales.
 

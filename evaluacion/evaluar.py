@@ -1,0 +1,900 @@
+"""Evaluación de PanelClean: corre las métricas comprometidas en el Hito 1.
+
+Partes:
+1. Pares sintéticos: máscara (IoU/Dice), selector, limpieza (MAE/PSNR/SSIM),
+   conservación e hipótesis «selección adaptativa vs. método único».
+2. OpenMantra: detección de texto (precisión, recall y F1).
+3. OpenMantra ampliado a 2048 px: tiempo por página.
+4. Regiones reales etiquetadas a mano (si existe evaluacion/etiquetas.csv): selector.
+
+Uso, desde la raíz del repositorio:
+    python -m evaluacion.evaluar            # evaluación completa (unos minutos)
+    python -m evaluacion.evaluar --rapido   # versión corta para probar
+Los resultados quedan en evaluacion/resultados/.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import platform
+import sys
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw
+
+from panelclean import __version__
+from panelclean import vision as V
+
+from . import metricas as M
+from . import muestreo
+from . import sinteticos as S
+
+CARPETA = Path(__file__).resolve().parent
+RESULTADOS = CARPETA / 'resultados'
+DATASET = CARPETA.parent / 'datasets' / 'open-mantra'
+ETIQUETAS = CARPETA / 'etiquetas.csv'
+
+METODOS_FIJOS = ('Relleno local', 'Inpainting Telea', 'Inpainting NS')
+METODOS = METODOS_FIJOS + ('Automático',)
+# Obra reservada como conjunto de prueba (nunca se usa para ajustar nada).
+LIBRO_PRUEBA = 'tencho_isoro'
+LADO_RENDIMIENTO = 2048
+META_TIEMPO = 15.0
+
+
+def clase_simple(nombre: str) -> str:
+    """Nombre de clase de la aplicación → clase de la evaluación."""
+    return 'Complejo' if nombre.startswith('Complejo') else nombre
+
+
+def num(valor: float, decimales: int = 2) -> str:
+    """Número con coma decimal, para pegarlo directo en el informe."""
+    return f'{valor:.{decimales}f}'.replace('.', ',')
+
+
+def con_ic(valores, decimales: int = 2) -> str:
+    """«media [inf; sup]» con intervalo de confianza del 95 % por bootstrap."""
+    media, inf, sup = M.intervalo_bootstrap(valores)
+    return f'{num(media, decimales)} [{num(inf, decimales)}; {num(sup, decimales)}]'
+
+
+def tabla(encabezado: list[str], filas: list[list]) -> str:
+    """Tabla en Markdown."""
+    lineas = ['| ' + ' | '.join(encabezado) + ' |', '|' + '---|' * len(encabezado)]
+    lineas += ['| ' + ' | '.join(str(c) for c in fila) + ' |' for fila in filas]
+    return '\n'.join(lineas)
+
+
+def guardar_csv(nombre: str, filas: list[dict]) -> None:
+    """Guarda las filas en resultados/<nombre>."""
+    if not filas:
+        return
+    with open(RESULTADOS / nombre, 'w', newline='', encoding='utf-8') as f:
+        escritor = csv.DictWriter(f, fieldnames=list(filas[0]))
+        escritor.writeheader()
+        escritor.writerows(filas)
+
+
+# ---------------------------------------------------------------------------
+# 1. Pares sintéticos
+# ---------------------------------------------------------------------------
+
+
+def evaluar_sinteticos(pares: list[S.Par]) -> tuple[list[dict], list[dict]]:
+    """Mide máscara, selector y limpieza en cada par. Devuelve (filas_mascara, filas_limpieza)."""
+    filas_mascara, filas_limpieza = [], []
+    for i, par in enumerate(pares):
+        region = V.bounded_region(par.con_texto, par.caja)
+        V.generate_mask(par.con_texto, region, V.Options())
+        ys = slice(region.y, region.y + region.h)
+        xs = slice(region.x, region.x + region.w)
+        prediccion = region.mask.copy()
+        referencia = (par.referencia[ys, xs] > 0).astype(np.uint8) * 255
+        regla = V.classify_background(region.variance, region.edge_density)[0]
+        filas_mascara.append(
+            {
+                'par': i,
+                'clase': par.clase,
+                'borde_blanco': int(par.borde_blanco),
+                'iou': M.iou(prediccion, referencia),
+                'dice': M.dice(prediccion, referencia),
+                'cobertura': M.cobertura(prediccion, referencia),
+                'exceso': M.exceso(prediccion, referencia),
+                'selector': clase_simple(regla),
+                'selector_app': region.classification,
+                'varianza': region.variance,
+                'densidad_bordes': region.edge_density,
+                'texto': par.texto,
+            }
+        )
+
+        def fila(
+            mascara_tipo: str, metodo: str, usado: str, salida, mascara, predicha: str
+        ) -> dict:
+            limpio, entrada = par.limpio[ys, xs], par.con_texto[ys, xs]
+            resultado = salida[ys, xs]
+            completa = np.zeros(par.referencia.shape, np.uint8)
+            completa[ys, xs] = mascara
+            cambiados = np.any(salida != par.con_texto, axis=2)
+            danio = M.gris(salida) - M.gris(par.limpio)
+            return {
+                'par': i,
+                'clase': par.clase,
+                'borde_blanco': int(par.borde_blanco),
+                'mascara': mascara_tipo,
+                'clase_predicha': predicha,
+                'metodo': metodo,
+                'usado': usado,
+                'sin_aplicar': int(not np.any(resultado != entrada)),
+                'mae_region': M.mae(resultado, limpio),
+                'mae_texto': M.mae(resultado, limpio, referencia),
+                'psnr_region': M.psnr(resultado, limpio),
+                'ssim_region': M.ssim(resultado, limpio),
+                'px_fuera_mascara': int((cambiados & (completa == 0)).sum()),
+                'px_fondo_danado': int(
+                    (
+                        (np.abs(danio) > S.UMBRAL_REFERENCIA) & (par.referencia == 0)
+                    ).sum()
+                ),
+            }
+
+        vacia = np.zeros_like(prediccion)
+        filas_limpieza.append(fila('-', 'Sin limpiar', '-', par.con_texto, vacia, '-'))
+        for tipo, mascara in (('sistema', prediccion), ('perfecta', referencia)):
+            region.mask = mascara.copy()
+            V.describe_background(par.con_texto, region)
+            predicha = clase_simple(
+                V.classify_background(region.variance, region.edge_density)[0]
+            )
+            for metodo in METODOS:
+                salida, usado, _ = V.clean_region(
+                    par.con_texto, region, V.Options(method=metodo)
+                )
+                filas_limpieza.append(
+                    fila(tipo, metodo, usado, salida, mascara, predicha)
+                )
+    return filas_mascara, filas_limpieza
+
+
+def resumen_mascara(filas: list[dict]) -> tuple[str, float]:
+    """Sección de la máscara. Devuelve (texto, IoU medio)."""
+    partes = ['## 1. Máscara de texto (pares sintéticos)', '']
+    partes.append(
+        'Referencia: los píxeles que el texto cambió respecto del fondo limpio '
+        f'(diferencia mayor que {S.UMBRAL_REFERENCIA} niveles de gris), borde blanco incluido. '
+        'La máscara se genera con los ajustes por defecto de la aplicación. '
+        '*Cobertura* = parte del texto que queda dentro de la máscara (lo que falta queda como resto); '
+        '*exceso* = parte de la máscara que no era texto.'
+    )
+    partes.append('')
+    filas_tabla = []
+    grupos = [(c, [f for f in filas if f['clase'] == c]) for c in S.CLASES]
+    grupos += [
+        ('Con borde blanco', [f for f in filas if f['borde_blanco']]),
+        ('Sin borde blanco', [f for f in filas if not f['borde_blanco']]),
+        ('**Todos**', filas),
+    ]
+    for nombre, g in grupos:
+        if not g:
+            continue
+        filas_tabla.append(
+            [
+                nombre,
+                len(g),
+                con_ic([f['iou'] for f in g]),
+                num(np.mean([f['dice'] for f in g])),
+                num(np.mean([f['cobertura'] for f in g])),
+                num(np.mean([f['exceso'] for f in g])),
+            ]
+        )
+    partes.append(
+        tabla(
+            ['Fondo', 'Pares', 'IoU [IC 95 %]', 'Dice', 'Cobertura', 'Exceso'],
+            filas_tabla,
+        )
+    )
+    return '\n'.join(partes), float(np.mean([f['iou'] for f in filas]))
+
+
+def resumen_selector(filas: list[dict]) -> tuple[str, float]:
+    """Sección del selector en sintéticos. Devuelve (texto, macro-F1)."""
+    reales = [f['clase'] for f in filas]
+    predichas = [f['selector'] for f in filas]
+    clases = list(S.CLASES)
+    m = M.matriz_confusion(reales, predichas, clases)
+    f1 = M.f1_por_clase(reales, predichas, clases)
+    macro = M.macro_f1(reales, predichas, clases)
+    revisar = sum(f['selector_app'] == 'Revisar máscara' for f in filas)
+    partes = ['## 2. Selector de estrategia (pares sintéticos)', '']
+    partes.append(
+        'La clase real es la del fondo generado. Se evalúa la regla de varianza y '
+        'densidad de bordes (`classify_background`) sin el aviso de «Revisar máscara», '
+        'que no es una clase de fondo.'
+    )
+    partes.append('')
+    partes.append(
+        tabla(
+            ['Real \\ Predicha'] + clases + ['F1'],
+            [[c] + list(m[k]) + [num(f1[c])] for k, c in enumerate(clases)],
+        )
+    )
+    partes.append('')
+    partes.append(
+        f'Exactitud: **{num(M.exactitud(reales, predichas))}** · '
+        f'Macro-F1: **{num(macro)}** · '
+        f'Regiones con aviso «Revisar máscara» en la aplicación: {revisar} de {len(filas)}.'
+    )
+    return '\n'.join(partes), macro
+
+
+# Método que aplica el selector según la clase de fondo. El modo automático de la
+# aplicación deja «Complejo» para revisión manual; para poder comparar en todos los
+# pares, aquí se usa Telea (el inpainting que la aplicación ya usa por defecto).
+MAPA_SELECTOR = {
+    'Uniforme': 'Relleno local',
+    'Estructurado': 'Inpainting Telea',
+    'Complejo': 'Inpainting Telea',
+}
+# (columna, nombre, sentido, decimales). sentido = 1 si menor es mejor, -1 si mayor es mejor.
+CRITERIOS = (
+    ('mae_region', 'MAE', 1, 2),
+    ('psnr_region', 'PSNR', -1, 1),
+    ('ssim_region', 'SSIM', -1, 3),
+)
+
+
+def resumen_limpieza(filas: list[dict]) -> tuple[str, dict]:
+    """Secciones de limpieza, hipótesis y conservación. Devuelve (texto, datos clave)."""
+    datos = {}
+    partes = ['## 3. Limpieza e hipótesis central (pares sintéticos)', '']
+    partes.append(
+        'Se comparan la salida y el fondo limpio en escala de grises, dentro de la '
+        'selección. MAE en niveles de gris (0-255, menor es mejor); PSNR en dB y SSIM '
+        '(mayor es mejor). Ojo: el MAE favorece por construcción el relleno con la mediana '
+        '(la mediana es el valor que minimiza el error absoluto), aunque borre la textura; '
+        'el SSIM sí mide si la textura se conserva. Por eso la hipótesis se juzga con las tres.'
+    )
+    partes.append('')
+    partes.append(
+        'Estrategias: los tres métodos únicos; el **adaptativo (selector actual)**, que '
+        'usa Relleno local si la regla clasifica el fondo como Uniforme y Telea en otro caso; '
+        'el **adaptativo (clase real)**, igual pero con la clase verdadera del fondo (lo que '
+        'lograría un clasificador perfecto), y el **oráculo por par**, que elige el mejor '
+        'método único de cada par según el MAE (techo). Todas se miden en los mismos pares.'
+    )
+    por_par: dict = {}
+    for f in filas:
+        por_par.setdefault((f['mascara'], f['par']), {})[f['metodo']] = f
+    sin_limpiar = {f['par']: f for f in filas if f['metodo'] == 'Sin limpiar'}
+
+    for tipo, titulo in (
+        ('perfecta', 'Con la máscara perfecta (aísla la elección del método)'),
+        ('sistema', 'Con la máscara del sistema (resultado que obtiene el usuario)'),
+    ):
+        pares = {p: v for (t, p), v in por_par.items() if t == tipo}
+        ids = sorted(pares)
+        if not ids:
+            continue
+
+        def selector(p, pares=pares):
+            return pares[p][MAPA_SELECTOR[pares[p]['Automático']['clase_predicha']]]
+
+        def clase_real(p, pares=pares):
+            return pares[p][MAPA_SELECTOR[pares[p]['Automático']['clase']]]
+
+        def oraculo(p, pares=pares):
+            return min(
+                (pares[p][m] for m in METODOS_FIJOS), key=lambda v: v['mae_region']
+            )
+
+        estrategias = (
+            [('Sin limpiar', lambda p: sin_limpiar[p])]
+            + [(m, lambda p, m=m, pares=pares: pares[p][m]) for m in METODOS_FIJOS]
+            + [
+                ('Adaptativo (selector actual)', selector),
+                ('Adaptativo (clase real)', clase_real),
+                ('Oráculo por par', oraculo),
+            ]
+        )
+        partes += ['', f'### {titulo}', '']
+        partes.append(
+            tabla(
+                ['Estrategia', 'MAE [IC 95 %]', 'PSNR (dB)', 'SSIM'],
+                [
+                    [
+                        nombre,
+                        con_ic([elegir(p)['mae_region'] for p in ids]),
+                        num(np.mean([elegir(p)['psnr_region'] for p in ids]), 1),
+                        num(np.mean([elegir(p)['ssim_region'] for p in ids]), 3),
+                    ]
+                    for nombre, elegir in estrategias
+                ],
+            )
+        )
+        # Por clase de fondo: qué método conviene en cada una.
+        partes += ['', 'Por clase de fondo (MAE · SSIM):', '']
+        filas_clase = []
+        for clase in S.CLASES:
+            ps = [p for p in ids if pares[p]['Automático']['clase'] == clase]
+            if ps:
+                filas_clase.append(
+                    [clase]
+                    + [
+                        f"{num(np.mean([elegir(p)['mae_region'] for p in ps]))} · "
+                        f"{num(np.mean([elegir(p)['ssim_region'] for p in ps]), 3)}"
+                        for _, elegir in estrategias[:-1]
+                    ]
+                )
+        partes.append(tabla(['Fondo'] + [n for n, _ in estrategias[:-1]], filas_clase))
+        # Hipótesis: adaptativo (selector actual) contra el mejor método único, por métrica.
+        partes += [
+            '',
+            '**Hipótesis** (adaptativo con el selector actual vs. mejor método único):',
+            '',
+        ]
+        veredictos = {}
+        for campo, nombre, sentido, dec in CRITERIOS:
+            medias = {
+                m: np.mean([pares[p][m][campo] for p in ids]) for m in METODOS_FIJOS
+            }
+            mejor = min(medias, key=lambda m: sentido * medias[m])
+            dif = [selector(p)[campo] - pares[p][mejor][campo] for p in ids]
+            media, inf, sup = M.intervalo_bootstrap(dif)
+            # Mejora = diferencia negativa en MAE y positiva en PSNR/SSIM.
+            if max(sentido * inf, sentido * sup) < 0:
+                veredicto = 'mejor'
+            elif min(sentido * inf, sentido * sup) > 0:
+                veredicto = 'peor'
+            else:
+                veredicto = 'sin diferencia significativa'
+            veredictos[nombre] = veredicto
+            partes.append(
+                f'- {nombre}: mejor método único = {mejor}; adaptativo − {mejor} = '
+                f'{num(media, dec)} [{num(inf, dec)}; {num(sup, dec)}] → **{veredicto}**.'
+            )
+        # Lo que hace de verdad el modo automático de la aplicación.
+        derivados = {
+            c: sum(
+                1
+                for p in ids
+                if pares[p]['Automático']['clase'] == c
+                and pares[p]['Automático']['sin_aplicar']
+            )
+            for c in S.CLASES
+        }
+        total = {
+            c: sum(1 for p in ids if pares[p]['Automático']['clase'] == c)
+            for c in S.CLASES
+        }
+        partes += [
+            '',
+            'En la aplicación, el modo automático deja para revisión manual (sin limpiar) '
+            + ', '.join(
+                f'{derivados[c]} de {total[c]} pares {c.lower()}s' for c in S.CLASES
+            )
+            + '.',
+        ]
+        datos[tipo] = veredictos
+
+    fuera = max(f['px_fuera_mascara'] for f in filas)
+    danio = [
+        f['px_fondo_danado']
+        for f in filas
+        if f['mascara'] == 'sistema' and f['metodo'] in METODOS_FIJOS
+    ]
+    partes += ['', '## 4. Conservación', '']
+    partes.append(
+        f'Píxeles modificados fuera de la máscara, en todas las limpiezas: **máximo {fuera}** '
+        '(meta: 0). Dentro de la máscara del sistema, los métodos alteraron de forma visible '
+        f'(más de {S.UMBRAL_REFERENCIA} niveles) en promedio {num(np.mean(danio), 1)} píxeles de '
+        'fondo sano por par: es el costo de que la máscara marque algo más que el texto.'
+    )
+    datos['fuera'] = fuera
+    return '\n'.join(partes), datos
+
+
+# ---------------------------------------------------------------------------
+# 2. Detección en OpenMantra
+# ---------------------------------------------------------------------------
+
+
+def cargar_openmantra() -> list[dict]:
+    """Anotaciones de OpenMantra."""
+    return json.loads((DATASET / 'annotation.json').read_text(encoding='utf-8'))
+
+
+def evaluar_deteccion(datos: list[dict], por_libro: int | None = None) -> list[dict]:
+    """Corre detect_bubbles en cada página y cuenta aciertos con los dos criterios."""
+    filas = []
+    for libro in datos:
+        for pagina in libro['pages'][:por_libro]:
+            imagen = V.bgr_from_file(str(DATASET / pagina['image_paths']['ja']))
+            detecciones = [
+                (r.x, r.y, r.x + r.w, r.y + r.h) for r in V.detect_bubbles(imagen)
+            ]
+            textos = [
+                (t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h'])
+                for t in pagina['text']
+            ]
+            acertados, correctas = M.aciertos_por_cobertura(detecciones, textos)
+            filas.append(
+                {
+                    'libro': libro['book_title'],
+                    'pagina': pagina['page_index'],
+                    'textos': len(textos),
+                    'detecciones': len(detecciones),
+                    'textos_acertados': acertados,
+                    'detecciones_correctas': correctas,
+                    'aciertos_iou50': M.aciertos_por_iou(detecciones, textos),
+                }
+            )
+    return filas
+
+
+def resumen_deteccion(filas: list[dict]) -> tuple[str, float, float]:
+    """Sección de detección. Devuelve (texto, F1 total, F1 en la obra de prueba)."""
+
+    def medir(g):
+        t = sum(f['textos'] for f in g)
+        d = sum(f['detecciones'] for f in g)
+        p, r, f1 = M.precision_recall_f1(
+            sum(f['detecciones_correctas'] for f in g),
+            d,
+            sum(f['textos_acertados'] for f in g),
+            t,
+        )
+        a = sum(f['aciertos_iou50'] for f in g)
+        _, _, f1_iou = M.precision_recall_f1(a, d, a, t)
+        return [len(g), t, d, num(p), num(r), f'**{num(f1)}**', num(f1_iou)], f1
+
+    partes = ['## 5. Detección de texto (OpenMantra)', '']
+    partes.append(
+        'Detector actual: `detect_bubbles` (heurístico, busca globos ovalados). Una caja de '
+        'texto está acertada si al menos el 80 % queda dentro de una región detectada; una '
+        'detección es correcta si contiene así algún texto. Como referencia se incluye el F1 '
+        'con el criterio estándar (emparejamiento uno a uno con IoU ≥ 0,5), que castiga que '
+        'el globo sea mucho más grande que el texto.'
+    )
+    partes.append('')
+    filas_tabla = []
+    for libro in dict.fromkeys(f['libro'] for f in filas):
+        valores, _ = medir([f for f in filas if f['libro'] == libro])
+        nombre = f'{libro} (prueba)' if libro == LIBRO_PRUEBA else libro
+        filas_tabla.append([nombre] + valores)
+    total, f1_total = medir(filas)
+    filas_tabla.append(['**Todas**'] + total)
+    partes.append(
+        tabla(
+            [
+                'Obra',
+                'Páginas',
+                'Textos',
+                'Detecciones',
+                'Precisión',
+                'Recall',
+                'F1',
+                'F1 (IoU ≥ 0,5)',
+            ],
+            filas_tabla,
+        )
+    )
+    prueba = [f for f in filas if f['libro'] == LIBRO_PRUEBA]
+    f1_prueba = medir(prueba)[1] if prueba else float('nan')
+    return '\n'.join(partes), f1_total, f1_prueba
+
+
+# ---------------------------------------------------------------------------
+# 3. Rendimiento
+# ---------------------------------------------------------------------------
+
+
+def nombre_cpu() -> str:
+    """Nombre del procesador (en Windows lo lee del registro)."""
+    try:
+        import winreg
+
+        clave = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\CentralProcessor\0'
+        )
+        return str(winreg.QueryValueEx(clave, 'ProcessorNameString')[0]).strip()
+    except Exception:
+        return platform.processor() or platform.machine()
+
+
+def evaluar_rendimiento(datos: list[dict], n_paginas: int) -> list[dict]:
+    """Tiempo de detección + máscaras + limpieza automática en páginas de 2048 px."""
+    paginas = [(libro['book_title'], p) for libro in datos for p in libro['pages']]
+    elegidas = np.linspace(0, len(paginas) - 1, min(n_paginas, len(paginas))).astype(
+        int
+    )
+    opciones = V.Options()
+    filas = []
+    for k in elegidas:
+        libro, pagina = paginas[k]
+        imagen = V.bgr_from_file(str(DATASET / pagina['image_paths']['ja']))
+        escala = LADO_RENDIMIENTO / max(imagen.shape[:2])
+        imagen = cv2.resize(
+            imagen, None, fx=escala, fy=escala, interpolation=cv2.INTER_CUBIC
+        )
+        inicio = time.perf_counter()
+        regiones = V.detect_bubbles(imagen)
+        trabajo = imagen
+        for region in regiones:
+            V.generate_mask(imagen, region, opciones)
+            trabajo, _, _ = V.clean_region(trabajo, region, opciones)
+        segundos = time.perf_counter() - inicio
+        filas.append(
+            {
+                'libro': libro,
+                'pagina': pagina['page_index'],
+                'ancho': imagen.shape[1],
+                'alto': imagen.shape[0],
+                'regiones': len(regiones),
+                'segundos': round(segundos, 3),
+            }
+        )
+    return filas
+
+
+def resumen_rendimiento(filas: list[dict]) -> tuple[str, float]:
+    """Sección de rendimiento. Devuelve (texto, tiempo máximo)."""
+    tiempos = [f['segundos'] for f in filas]
+    partes = ['## 6. Rendimiento', '']
+    partes.append(
+        f'{len(filas)} páginas de OpenMantra repartidas entre las cinco obras, ampliadas a '
+        f'{LADO_RENDIMIENTO} px de lado mayor. Se mide detectar regiones, crear sus máscaras y '
+        'limpiarlas en modo automático (sin contar abrir el archivo).'
+    )
+    partes.append('')
+    partes.append(
+        tabla(
+            ['Mediana (s)', 'Máximo (s)', 'Regiones por página (media)', 'Meta'],
+            [
+                [
+                    num(float(np.median(tiempos))),
+                    num(max(tiempos)),
+                    num(np.mean([f['regiones'] for f in filas]), 1),
+                    f'≤ {num(META_TIEMPO, 0)} s',
+                ]
+            ],
+        )
+    )
+    partes.append('')
+    partes.append(
+        f'Equipo: {nombre_cpu()}, {os.cpu_count()} hilos, {platform.system()} {platform.release()}.'
+    )
+    return '\n'.join(partes), max(tiempos)
+
+
+# ---------------------------------------------------------------------------
+# 4. Selector con regiones reales etiquetadas
+# ---------------------------------------------------------------------------
+
+
+def leer_etiquetas() -> tuple[list[dict], dict]:
+    """Etiquetas de consenso de etiquetas.csv y datos de acuerdo entre personas.
+
+    Si varias personas etiquetaron la misma región y no coinciden, la región se
+    deja fuera hasta que resuelvan el desacuerdo. Las descartadas no se usan.
+    """
+    if not ETIQUETAS.exists():
+        return [], {'dobles': 0, 'acuerdos': 0, 'personas': 0}
+    grupos: dict = {}
+    personas = set()
+    with open(ETIQUETAS, encoding='utf-8') as f:
+        for e in csv.DictReader(f):
+            personas.add(e['etiquetador'])
+            k = (e['libro'], int(e['pagina']), int(e['texto']))
+            grupos.setdefault(k, {})[e['etiquetador']] = e['etiqueta']
+    consenso, dobles, acuerdos = [], 0, 0
+    for (libro, pagina, texto), por_persona in grupos.items():
+        valores = set(por_persona.values())
+        if len(por_persona) > 1:
+            dobles += 1
+            acuerdos += len(valores) == 1
+        if len(valores) == 1 and (etiqueta := valores.pop()) in S.CLASES:
+            consenso.append(
+                {'libro': libro, 'pagina': pagina, 'texto': texto, 'etiqueta': etiqueta}
+            )
+    return consenso, {'dobles': dobles, 'acuerdos': acuerdos, 'personas': len(personas)}
+
+
+def evaluar_selector_real(datos: list[dict]) -> tuple[list[dict], dict]:
+    """Aplica la regla del selector a las regiones etiquetadas (con consenso).
+
+    Cada fila lleva su estrato y su peso N_h / n_h (ver muestreo.py), que corrige
+    que las regiones con fondo cargado se mostraran más seguido al etiquetar.
+    """
+    consenso, acuerdo = leer_etiquetas()
+    paginas = {(l['book_title'], p['page_index']): p for l in datos for p in l['pages']}
+    estratos = muestreo.cargar_estratos()
+    pesos, por_estrato = muestreo.pesos(
+        [(e['libro'], e['pagina'], e['texto']) for e in consenso]
+    )
+    acuerdo['por_estrato'] = por_estrato
+    filas, cache = [], {}
+    for e in consenso:
+        k = (e['libro'], e['pagina'], e['texto'])
+        pagina = paginas[(e['libro'], e['pagina'])]
+        ruta = DATASET / pagina['image_paths']['ja']
+        if ruta not in cache:
+            cache[ruta] = V.bgr_from_file(str(ruta))
+        t = pagina['text'][e['texto']]
+        region = V.bounded_region(
+            cache[ruta], (t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h'])
+        )
+        V.generate_mask(cache[ruta], region, V.Options())
+        regla = V.classify_background(region.variance, region.edge_density)[0]
+        filas.append(
+            {
+                **e,
+                'selector': clase_simple(regla),
+                'estrato': estratos[k],
+                'peso': round(pesos[k], 4),
+            }
+        )
+    return filas, acuerdo
+
+
+def resumen_selector_real(filas: list[dict], acuerdo: dict) -> tuple[str, float | None]:
+    """Sección del selector con datos reales. Devuelve (texto, macro-F1 ponderado o None)."""
+    partes = ['## 7. Selector con regiones reales (OpenMantra, etiquetadas a mano)', '']
+    if not filas:
+        partes.append(
+            'Pendiente: todavía no hay etiquetas. Se etiquetan con '
+            '`ETIQUETAR_WINDOWS.bat` (o `python -m evaluacion.etiquetar`) y se '
+            'vuelve a correr esta evaluación.'
+        )
+        return '\n'.join(partes), None
+    clases = list(S.CLASES)
+    reales = [f['etiqueta'] for f in filas]
+    predichas = [f['selector'] for f in filas]
+    pesos = [f['peso'] for f in filas]
+    m = M.matriz_confusion(reales, predichas, clases)
+    f1 = M.f1_por_clase(reales, predichas, clases, pesos)
+    macro = M.macro_f1(reales, predichas, clases, pesos)
+    partes.append(
+        'Casi todo el texto de OpenMantra está en globos blancos, así que al etiquetar '
+        'se muestran más seguido las regiones con fondo cargado (muestreo por estratos, '
+        'ver `muestreo.py`). La tabla muestra los conteos reales de regiones '
+        'etiquetadas; el F1, la exactitud y el macro-F1 están **ponderados** para '
+        'estimar el resultado en todo OpenMantra.'
+    )
+    partes.append('')
+    partes.append(
+        tabla(
+            ['Real \\ Predicha'] + clases + ['F1 (ponderado)'],
+            [[c] + list(m[k]) + [num(f1[c])] for k, c in enumerate(clases)],
+        )
+    )
+    partes.append('')
+    cuenta = {c: reales.count(c) for c in clases}
+    faltan = [c for c in clases if cuenta[c] < 15]
+    partes.append(
+        f'{len(filas)} regiones, etiquetadas por {acuerdo["personas"]} persona(s). '
+        f'Exactitud ponderada: **{num(M.exactitud(reales, predichas, pesos))}** · '
+        f'Macro-F1 ponderado: **{num(macro)}** '
+        f'(sin ponderar: {num(M.macro_f1(reales, predichas, clases))}).'
+        + (
+            f' Aún hay pocas regiones de: {", ".join(faltan)} (meta: 15 de cada una).'
+            if faltan
+            else ''
+        )
+    )
+    partes.append('')
+    partes.append(
+        tabla(
+            ['Estrato', 'Etiquetadas', 'Regiones en OpenMantra'],
+            [[h, n, N] for h, (n, N) in acuerdo['por_estrato'].items()],
+        )
+    )
+    if acuerdo['dobles']:
+        partes.append('')
+        partes.append(
+            f'{acuerdo["dobles"]} regiones tienen etiquetas de más de una persona; '
+            f'coinciden en {acuerdo["acuerdos"]} '
+            f'({num(100 * acuerdo["acuerdos"] / acuerdo["dobles"], 0)} %). '
+            'Las que no coinciden quedan fuera hasta resolverlas.'
+        )
+    return '\n'.join(partes), macro
+
+
+# ---------------------------------------------------------------------------
+# Ejemplos visuales
+# ---------------------------------------------------------------------------
+
+
+def guardar_ejemplos(pares: list[S.Par], por_clase: int = 2) -> None:
+    """Lámina con ejemplos: entrada, referencia, máscara, resultado automático y fondo limpio."""
+    titulos = ['Con texto', 'Referencia', 'Máscara', 'Automático', 'Fondo limpio']
+    fuente = S.fuente(18)
+    filas = []
+    for clase in S.CLASES:
+        for par in [p for p in pares if p.clase == clase][:por_clase]:
+            region = V.bounded_region(par.con_texto, par.caja)
+            V.generate_mask(par.con_texto, region, V.Options())
+            salida, usado, _ = V.clean_region(par.con_texto, region, V.Options())
+            x1, y1, x2, y2 = par.caja
+            mascara = np.zeros(par.referencia.shape, np.uint8)
+            mascara[y1:y2, x1:x2] = region.mask
+            entrada = par.con_texto.copy()
+            cv2.rectangle(entrada, (x1, y1), (x2 - 1, y2 - 1), (0, 0, 255), 2)
+            paneles = [
+                entrada,
+                cv2.cvtColor(par.referencia, cv2.COLOR_GRAY2BGR),
+                cv2.cvtColor(mascara, cv2.COLOR_GRAY2BGR),
+                salida,
+                par.limpio,
+            ]
+            fila = np.hstack(
+                [
+                    np.pad(p, ((4, 4), (4, 4), (0, 0)), constant_values=255)
+                    for p in paneles
+                ]
+            )
+            imagen = Image.fromarray(cv2.cvtColor(fila, cv2.COLOR_BGR2RGB))
+            ImageDraw.Draw(imagen).text(
+                (10, 8), f'{clase} · {usado}', fill=(200, 0, 0), font=fuente
+            )
+            filas.append(np.asarray(imagen))
+    cabecera = Image.new('RGB', (filas[0].shape[1], 30), 'white')
+    dibujo = ImageDraw.Draw(cabecera)
+    ancho_panel = filas[0].shape[1] // len(titulos)
+    for k, titulo in enumerate(titulos):
+        dibujo.text((k * ancho_panel + 10, 6), titulo, fill='black', font=fuente)
+    lamina = np.vstack([np.asarray(cabecera)] + filas)
+    Image.fromarray(lamina).save(RESULTADOS / 'ejemplos.png')
+
+
+# ---------------------------------------------------------------------------
+# Programa principal
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    """Corre todas las partes y escribe resultados/resumen.md."""
+    parser = argparse.ArgumentParser(description='Evaluación de PanelClean (Hito 1).')
+    parser.add_argument(
+        '--rapido', action='store_true', help='versión corta para probar'
+    )
+    parser.add_argument(
+        '--por-clase', type=int, default=50, help='pares sintéticos por clase'
+    )
+    parser.add_argument(
+        '--paginas-tiempo', type=int, default=20, help='páginas para medir tiempo'
+    )
+    args = parser.parse_args()
+    por_clase = 6 if args.rapido else args.por_clase
+    por_libro = 3 if args.rapido else None
+    n_tiempo = 3 if args.rapido else args.paginas_tiempo
+    RESULTADOS.mkdir(exist_ok=True)
+
+    def avance(texto: str) -> None:
+        print(f'[{time.strftime("%H:%M:%S")}] {texto}', flush=True)
+
+    avance(f'Generando {por_clase * len(S.CLASES)} pares sintéticos…')
+    pares = S.generar_conjunto(por_clase)
+    avance('Midiendo máscara, selector y limpieza…')
+    filas_mascara, filas_limpieza = evaluar_sinteticos(pares)
+    guardar_csv('sinteticos_mascara.csv', filas_mascara)
+    guardar_csv('sinteticos_limpieza.csv', filas_limpieza)
+    guardar_ejemplos(pares)
+
+    datos = cargar_openmantra()
+    avance('Midiendo la detección en OpenMantra…')
+    filas_det = evaluar_deteccion(datos, por_libro)
+    guardar_csv('deteccion.csv', filas_det)
+    avance(f'Midiendo el tiempo en {n_tiempo} páginas de {LADO_RENDIMIENTO} px…')
+    filas_tiempo = evaluar_rendimiento(datos, n_tiempo)
+    guardar_csv('rendimiento.csv', filas_tiempo)
+    avance('Selector con regiones reales…')
+    filas_real, acuerdo = evaluar_selector_real(datos)
+    guardar_csv('selector_real.csv', filas_real)
+
+    texto_mascara, iou_medio = resumen_mascara(filas_mascara)
+    texto_selector, macro_sint = resumen_selector(filas_mascara)
+    texto_limpieza, clave = resumen_limpieza(filas_limpieza)
+    texto_det, f1_det, f1_prueba = resumen_deteccion(filas_det)
+    texto_tiempo, t_max = resumen_rendimiento(filas_tiempo)
+    texto_real, macro_real = resumen_selector_real(filas_real, acuerdo)
+
+    def cumple(ok: bool) -> str:
+        return 'Sí' if ok else 'No'
+
+    hip = clave.get('sistema', {})
+    filas_meta = [
+        [
+            'Detección (F1, todas las obras)',
+            '≥ 0,85',
+            num(f1_det),
+            cumple(f1_det >= 0.85),
+        ],
+        [
+            f'Detección (F1, obra de prueba {LIBRO_PRUEBA})',
+            '≥ 0,85',
+            num(f1_prueba),
+            cumple(f1_prueba >= 0.85),
+        ],
+        [
+            'Máscara (IoU medio, sintéticos)',
+            '≥ 0,80',
+            num(iou_medio),
+            cumple(iou_medio >= 0.80),
+        ],
+        [
+            'Selector (macro-F1, sintéticos)',
+            '≥ 0,80',
+            num(macro_sint),
+            cumple(macro_sint >= 0.80),
+        ],
+        [
+            'Selector (macro-F1, regiones reales)',
+            '≥ 0,80',
+            num(macro_real) if macro_real is not None else 'pendiente',
+            cumple(macro_real >= 0.80) if macro_real is not None else '—',
+        ],
+        ['Reconstrucción (MAE/PSNR/SSIM)', 'sin meta', 'ver sección 3', '—'],
+        [
+            'Conservación (píxeles fuera de la máscara)',
+            '0',
+            str(clave['fuera']),
+            cumple(clave['fuera'] == 0),
+        ],
+        [
+            'Rendimiento (máximo por página de 2048 px)',
+            '≤ 15 s',
+            f'{num(t_max)} s',
+            cumple(t_max <= META_TIEMPO),
+        ],
+        [
+            'Hipótesis: adaptativo vs. mejor método único (máscara perfecta)',
+            'adaptativo mejor',
+            ' · '.join(f'{k}: {v}' for k, v in clave.get('perfecta', {}).items()),
+            '—',
+        ],
+        [
+            'Hipótesis: adaptativo vs. mejor método único (máscara del sistema)',
+            'adaptativo mejor',
+            ' · '.join(f'{k}: {v}' for k, v in hip.items()),
+            '—',
+        ],
+    ]
+    encabezado = [
+        '# Resultados de la evaluación de PanelClean',
+        '',
+        f'Generado con `python -m evaluacion.evaluar{" --rapido" if args.rapido else ""}` · '
+        f'PanelClean {__version__} · Python {platform.python_version()} · '
+        f'OpenCV {cv2.__version__} · NumPy {np.__version__} · '
+        f'{len(pares)} pares sintéticos (semilla {S.SEMILLA}) · {len(filas_det)} páginas de OpenMantra.',
+        '',
+        'Los intervalos entre corchetes son de confianza del 95 % (bootstrap). '
+        'Los datos de cada par y cada página están en los CSV de esta carpeta; '
+        '`ejemplos.png` muestra algunos pares.',
+        '',
+        '## Resumen frente a las metas del Hito 1',
+        '',
+        tabla(['Métrica', 'Meta', 'Resultado', '¿Cumple?'], filas_meta),
+    ]
+    resumen = '\n\n'.join(
+        [
+            '\n'.join(encabezado),
+            texto_mascara,
+            texto_selector,
+            texto_limpieza,
+            texto_det,
+            texto_tiempo,
+            texto_real,
+        ]
+    )
+    (RESULTADOS / 'resumen.md').write_text(resumen + '\n', encoding='utf-8')
+    avance(f'Listo: {RESULTADOS / "resumen.md"}')
+
+
+if __name__ == '__main__':
+    sys.exit(main())

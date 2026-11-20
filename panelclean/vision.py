@@ -300,29 +300,42 @@ def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, 
     var = float(np.var(vals)) if vals.size else 0.0
     edge = cv2.Canny(gray, 75, 170) > 0
     edge_density = float(edge[valid].mean()) if valid.any() else 0.0
-    # Guardarraíl adicional: una máscara que cubre gran parte de su zona
-    # puede estar incluyendo dibujo o borde, no solo letras.
     coverage = float(cv2.countNonZero(mask) / max(1, np.count_nonzero(allowed)))
-    region.review_reason = ''
-    if coverage > 0.36:
-        name, method = 'Revisar máscara', 'Revisión manual'
-        region.review_reason = (
-            f'La máscara cubre {coverage:.0%} del área útil. Revísala antes de limpiar.'
-        )
-    elif var < 120 and edge_density < 0.055:
-        name, method = 'Uniforme', 'Relleno local'
-    elif var < 2600 and edge_density < 0.21:
-        name, method = 'Estructurado', 'Inpainting Telea'
-    else:
-        name, method = 'Complejo / revisar', 'Revisión manual'
-        region.review_reason = (
-            'Fondo detallado: revisa la máscara o elige el método manualmente.'
-        )
+    name, method, reason = classify_background(var, edge_density, coverage)
+    region.review_reason = reason
     region.variance = var
     region.edge_density = edge_density
     region.classification = name
     region.suggested_method = method
     return name, var, edge_density
+
+
+def classify_background(
+    variance: float, edge_density: float, coverage: float = 0.0
+) -> tuple[str, str, str]:
+    """Regla del selector: devuelve (clase, método sugerido, motivo de revisión).
+
+    variance y edge_density describen el fondo cercano al texto. coverage es la
+    fracción del área útil que cubre la máscara; con coverage = 0 se aplica solo
+    la regla de fondo (así la usa la evaluación del selector).
+    """
+    # Guardarraíl: una máscara que cubre gran parte de su zona puede estar
+    # incluyendo dibujo o borde, no solo letras.
+    if coverage > 0.36:
+        return (
+            'Revisar máscara',
+            'Revisión manual',
+            f'La máscara cubre {coverage:.0%} del área útil. Revísala antes de limpiar.',
+        )
+    if variance < 120 and edge_density < 0.055:
+        return 'Uniforme', 'Relleno local', ''
+    if variance < 2600 and edge_density < 0.21:
+        return 'Estructurado', 'Inpainting Telea', ''
+    return (
+        'Complejo / revisar',
+        'Revisión manual',
+        'Fondo detallado: revisa la máscara o elige el método manualmente.',
+    )
 
 
 def clean_region(

@@ -49,7 +49,19 @@ Las pruebas están en `tests/` y usan solo la biblioteca estándar de Python. Co
 
 Comprueban, entre otras cosas, que la limpieza no modifique ningún píxel fuera de la máscara, que el globo blanco se clasifique como «Uniforme» y el de trama como «Estructurado», y que «Quitar» y «Deshacer» funcionen juntos.
 
+## Evaluación
+
+La carpeta `evaluacion/` mide las metas del Hito 1: detección, máscara, selector, limpieza, conservación, tiempo por página y la hipótesis de que limpiar de forma adaptativa supera a un método único. Usa pares sintéticos (fondo limpio + texto japonés) y las páginas de OpenMantra.
+
+```bash
+.venv\Scripts\python -m evaluacion.evaluar      # Windows
+.venv/bin/python -m evaluacion.evaluar          # Linux
+```
+
+Los resultados quedan en `evaluacion/resultados/resumen.md`. Para etiquetar el fondo de regiones reales (lo necesita la métrica del selector), en Windows basta con hacer doble clic en `ETIQUETAR_WINDOWS.bat`. El detalle de cada métrica está en [`evaluacion/README.md`](evaluacion/README.md).
+
 ## Datos incluidos y créditos
 
 - `examples/demo_pagina.png`: página sintética de ejemplo que abre el botón `Ejemplo`.
 - `datasets/open-mantra/`: **OpenMantra dataset**, de R. Hinami, S. Ishiwatari, K. Yasuda y Y. Matsui («Towards Fully Automated Manga Translation», AAAI 2021), descargado de <https://github.com/mantra-inc/open-mantra-dataset>. Son 214 páginas de cinco mangas japoneses con 1592 bloques de texto anotados, bajo licencia **CC BY-NC 4.0** (uso no comercial). No es obra del equipo; se incluye sin modificar para entrenar y evaluar la detección de texto. Los detalles, la licencia y la cita están en [`datasets/README.md`](datasets/README.md).
+- `evaluacion/fuentes/NotoSansJP-Bold.otf`: fuente **Noto Sans JP** de Google ([github.com/notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)), bajo licencia **SIL Open Font License 1.1** (incluida en `evaluacion/fuentes/OFL.txt`). Se usa para escribir el texto japonés de los pares sintéticos.
