@@ -24,6 +24,8 @@ En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
 ## Uso básico
 
+El **[manual de instalación y usuario](MANUAL.md)** explica cada control con capturas, cómo corregir la máscara y qué hacer si algo falla (también en PDF: `Manual_PanelClean.pdf`). En resumen:
+
 1. `Abrir imagen` para cargar una página o `Ejemplo` para usar la imagen incluida.
 2. En la vista Original, arrastra un rectángulo ajustado alrededor de las letras que quieres limpiar.
 3. Puedes seleccionar varias regiones.
