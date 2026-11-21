@@ -77,6 +77,30 @@ class MascaraTest(unittest.TestCase):
         )
         self.assertEqual(cv2.countNonZero(mask[118:133]), 0, 'no debe marcar la línea')
 
+    def test_no_borra_lo_que_entra_por_el_borde(self):
+        # Una sombra que entra por una esquina de la selección y sigue afuera no
+        # es texto: rellenarla dejaría un parche blanco con el borde del rectángulo.
+        img = np.full((200, 300, 3), 255, np.uint8)
+        cv2.putText(img, 'HOLA', (80, 110), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 0), 4)
+        cv2.rectangle(img, (200, 140), (299, 199), (30, 30, 30), -1)
+        r = V.bounded_region(img, (60, 60, 230, 160))
+        mask = V.generate_mask(img, r, self.opts)
+        self.assertEqual(cv2.countNonZero(mask[140 - 60 :, 200 - 60 :]), 0)
+        self.assertGreater(
+            cv2.countNonZero(mask[:70, :140]), 300, 'debe marcar las letras'
+        )
+
+    def test_una_letra_cortada_por_la_seleccion_se_sigue_borrando(self):
+        # Con una selección ajustada que corta la parte de arriba de las letras,
+        # lo que queda adentro sigue siendo casi todo letra y se marca.
+        img = np.full((160, 320, 3), 255, np.uint8)
+        cv2.putText(img, 'HOLA', (60, 95), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 4)
+        r = V.bounded_region(img, (50, 64, 270, 120))
+        mask = V.generate_mask(img, r, V.Options(expansion=0))
+        gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)[r.y : r.y + r.h, r.x : r.x + r.w]
+        tinta = (gris < 128) & (V.inner_area(r) > 0)
+        self.assertGreater(float((mask[tinta] > 0).mean()), 0.9)
+
     def test_separa_letras_de_rayas_y_tramas(self):
         # Pares sintéticos con fondo estructurado (semilla de desarrollo, no la de
         # la evaluación). Antes, las letras que tocaban una raya se descartaban.
@@ -112,13 +136,23 @@ class MascaraTest(unittest.TestCase):
         self.assertGreater(float((mask[gris < 20] > 0).mean()), 0.9)
         self.assertEqual(int((mask[gris == 170] > 0).sum()), 0)
 
-    @unittest.expectedFailure
-    def test_limitacion_texto_sobre_fondo_oscuro_parejo(self):
-        # Limitación conocida: sobre un fondo casi negro, el umbral junta el fondo
-        # con las letras y no se detecta el texto. Haría falta otra estrategia
-        # (buscar los contornos blancos y rellenar lo que encierran).
+    def test_texto_con_contorno_sobre_fondo_oscuro_parejo(self):
+        # Era una limitación: el fondo oscuro tocaba el borde de la selección y se
+        # tomaba por una línea larga. Ahora se marcan las letras y casi nada del fondo.
         gris, mask = self.texto_con_contorno(45)
         self.assertGreater(float((mask[gris < 20] > 0).mean()), 0.9)
+        self.assertLess(float((mask[gris == 45] > 0).mean()), 0.05)
+
+    @unittest.expectedFailure
+    def test_limitacion_letras_blancas_sobre_fondo_negro(self):
+        # Limitación conocida: la máscara busca tinta oscura, así que no encuentra
+        # letras claras sobre un fondo negro.
+        img = np.full((140, 260, 3), 20, np.uint8)
+        cv2.putText(img, 'HOLA', (30, 95), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,) * 3, 5)
+        r = V.bounded_region(img, (15, 30, 245, 115))
+        mask = V.generate_mask(img, r, V.Options())
+        gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)[r.y : r.y + r.h, r.x : r.x + r.w]
+        self.assertGreater(float((mask[gris > 200] > 0).mean()), 0.9)
 
     def test_sin_contorno_en_globo_blanco(self):
         # En un globo blanco no hay contorno que agregar: la máscara no cubre papel.

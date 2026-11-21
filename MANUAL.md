@@ -155,26 +155,28 @@ Pulsa **Exportar** (`Ctrl + S`) y elige dónde guardar. Se crean tres archivos; 
 
 ## 5. Cuando la máscara falla
 
-La máscara se calcula por el tono y la forma de los trazos, no por el significado de las letras. Si una parte del dibujo es tan oscura y delgada como una letra, puede quedar marcada. En este ejemplo real, la región toca el pelo de un personaje y la máscara se lleva parte de él:
+La máscara se calcula por el tono, el tamaño y la forma de los trazos, no por el significado de las letras. PanelClean ya descarta por sí solo lo que entra por el borde de la selección y sigue fuera de ella (una sombra, el borde del globo, un trazo de dibujo), pero todavía puede equivocarse de dos maneras.
 
-![La máscara cubre parte del pelo del personaje](docs/manual/mascara_con_dibujo.png)
+**Faltan letras o signos.** Las piezas muy pequeñas, como puntos o comas, pueden quedar sin rosa. En este ejemplo real, la máscara cubre «かっ» pero no los puntos suspensivos:
 
-Peor aún: como el pelo quedó dentro de la máscara, lo que rodea a las letras es papel blanco y la clase dice **Uniforme**. Si se limpiara así, la cabeza quedaría pintada de blanco. Por eso conviene revisar siempre el rosa.
+![La máscara de «かっ…» no cubre los puntos suspensivos](docs/manual/mascara_incompleta.png)
 
-**Cómo corregirla:**
+Para corregirla:
 
-1. Elige la región y la herramienta **Borrar máscara**. El tamaño del pincel está en Ajustes avanzados.
-2. Pinta sobre lo rosa que no es texto. Al soltar el botón, el fondo se vuelve a analizar.
-3. Limpia otra vez.
+1. Elige la región y la herramienta **Añadir máscara**. El tamaño del pincel está en Ajustes avanzados.
+2. Pinta sobre lo que falta. Al soltar el botón, el fondo se vuelve a analizar.
+3. Limpia otra vez. En este caso, el rectángulo toca el fondo negro de fuera del globo, así que el análisis dice **Complejo / revisar** y el modo automático no lo limpia. Como detrás de las letras hay papel blanco, elige **Relleno local** en Método y pulsa **Limpiar selección**.
 
-![Máscara corregida con el pincel y región limpiada](docs/manual/mascara_corregida.png)
+![Puntos añadidos con el pincel y región limpiada con Relleno local](docs/manual/mascara_completada.png)
 
-Tras la corrección, el fondo incluye la trama del pelo, la clase pasa a **Estructurado** y la limpieza reconstruye la zona en vez de pintarla de blanco.
+Si después de limpiar quedan motas sueltas, como aquí junto a la «っ», un toque más con **Añadir máscara** y otra limpieza las borran.
+
+**Sobra dibujo.** Si dentro de la selección hay un trazo de dibujo tan oscuro y delgado como una letra, puede quedar marcado. Bórralo con la herramienta **Borrar máscara** antes de limpiar. Esto importa más de lo que parece: si el dibujo queda dentro de la máscara, lo que rodea a las letras parece papel liso, la clase dice **Uniforme** y la limpieza pintaría ese dibujo de blanco. Por eso conviene revisar siempre el rosa.
 
 **Otras formas de arreglarlo:**
 
-- **Añadir máscara**: pinta encima de letras o signos que quedaron sin rosa (por ejemplo, puntos o signos pequeños).
 - **Ajustar el rectángulo**: quita la región y márcala de nuevo más ajustada, o divídela en dos.
+- **Sensibilidad** (Ajustes avanzados): súbela si faltan signos pequeños en muchas regiones.
 - **Crear máscaras** otra vez descarta las correcciones hechas con el pincel; por eso pregunta antes.
 - **Dejarla para el final**: una región en «Complejo / revisar» no se limpia sola. Puedes elegir un método a mano o limpiarla en otro editor.
 
@@ -203,8 +205,8 @@ Se abren con **Ajustes avanzados** en el panel izquierdo. Después de cambiar un
 | Ajuste | Qué hace | Cuándo cambiarlo |
 |---|---|---|
 | **Umbralización** | Cómo se separa la tinta del fondo. **Otsu** usa un único umbral para toda la región; **Adaptativo** calcula uno distinto en cada zona | Adaptativo, si el fondo es un degradado o está más oscuro de un lado |
-| **Sensibilidad** (1-8) | Tamaño mínimo de una pieza de tinta para considerarla parte de una letra: 7 píxeles de área con 1, 3 con 8 | Súbela si faltan puntos, comas o marcas pequeñas; bájala si aparecen motas sueltas |
-| **Expansión de máscara** (0-3) | Cuántos píxeles crece la máscara alrededor de las letras, solo sobre tinta, para no dejar un borde gris | Súbela si queda el contorno de las letras tras limpiar |
+| **Sensibilidad** (1-8, por defecto 4) | Tamaño mínimo de una pieza de tinta para considerarla parte de una letra: 7 píxeles de área con 1, 3 con 8 | Súbela si faltan puntos, comas o marcas pequeñas; bájala si aparecen motas sueltas |
+| **Expansión de máscara** (0-3, por defecto 2) | Cuántos píxeles crece la máscara alrededor de las letras, solo sobre tinta, para no dejar un borde gris | Súbela si queda el contorno de las letras tras limpiar; bájala si la limpieza se come detalles del fondo |
 | **Tamaño del pincel** (2-20) | Radio del pincel de Añadir y Borrar máscara, en píxeles de la imagen | Chico para detalles, grande para zonas amplias |
 | **Radio de inpainting** (1-8, panel Limpieza) | Cuánto alrededor mira el inpainting para reconstruir | Más alto suaviza más; más bajo conserva mejor los bordes |
 
@@ -229,11 +231,11 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 
   ![De cerca: el globo con trama antes y después](docs/manual/detalle_globo_trama.png)
 
-- **Texto sobre dibujo.** La máscara confunde con letras los trazos de dibujo de grosor parecido (sección 5). Es el caso con peores resultados en las pruebas.
-- **Texto sobre fondo casi negro.** No se detecta: la umbralización junta las letras y el fondo oscuro.
+- **Texto sobre dibujo.** La máscara confunde con letras los trazos de dibujo de grosor parecido (sección 5), y cuando las letras tienen un borde blanco suele quedar su silueta. Es el caso con peores resultados en las pruebas.
+- **Letras blancas sobre fondo negro.** No se detectan: la máscara busca tinta oscura. (El texto negro con borde blanco sobre un fondo oscuro sí se detecta.)
 - **Detector de globos.** Es experimental (sección 6).
 - **Clasificación del fondo.** Acierta bien en papel liso, pero con tramas finas reales se equivoca más que con dibujo. Revisa la clase en el panel Selección.
-- **Restos.** A veces quedan motas sueltas del borde de las letras; se borran con **Añadir máscara** y limpiando de nuevo.
+- **Restos.** En algunos globos queda un moteado gris muy tenue donde estaban las letras, sobre todo en páginas con mucha compresión JPEG. Se nota al mirar de cerca y se borra con **Añadir máscara** o subiendo la **Expansión**. También pueden quedar signos muy pequeños sin borrar (sección 5).
 
 ## 10. Solución de problemas
 

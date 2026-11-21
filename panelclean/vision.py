@@ -13,7 +13,9 @@ class Options:
 
     threshold: str = 'Otsu'
     sensitivity: int = 4
-    expansion: int = 1
+    # 2 px: cubre el antialias y el ruido de compresión que rodean a las letras.
+    # En las cajas de OpenMantra deja la mitad de «fantasmas» que con 1 px.
+    expansion: int = 2
     radius: int = 3
     method: str = 'Automático'
 
@@ -180,12 +182,16 @@ def iou_rect(a: Region, b: Region) -> float:
 def inner_area(region: Region) -> np.ndarray:
     """Zona de la región que se puede modificar: el interior del globo (o todo el
     rectángulo) erosionado unos píxeles para no tocar el contorno.
+
+    La erosión solo achica el interior de un globo detectado: en una selección
+    manual el rectángulo entero queda permitido (OpenCV no erosiona desde el
+    borde de la imagen), así una selección ajustada no deja sin borrar el borde
+    de las letras. Lo que entra desde fuera lo descarta _tinta_que_sigue_afuera.
     """
     if region.interior is not None:
         mask = region.interior.copy()
     else:
         mask = np.full((region.h, region.w), 255, np.uint8)
-    # Protección del contorno externo incluso en selección manual.
     margin = max(2, min(5, int(min(region.w, region.h) * 0.04)))
     mask = cv2.erode(
         mask,
@@ -199,18 +205,24 @@ def _line_protection(binary: np.ndarray) -> np.ndarray:
 
     Es deliberadamente conservador: una linea larga puede ser arte o el borde
     del globo. En la beta preferimos que el usuario la marque si es texto.
+    Fuera de la región se cuenta papel: si no, OpenCV toma el exterior como
+    tinta y cualquier letra que toque el borde de la selección parecería una
+    línea larga. Las líneas que siguen fuera de la selección las descarta
+    _tinta_que_sigue_afuera.
     """
     h, w = binary.shape
-    horizontal = cv2.morphologyEx(
-        binary,
-        cv2.MORPH_OPEN,
-        cv2.getStructuringElement(cv2.MORPH_RECT, (max(28, int(w * 0.67)), 1)),
-    )
-    vertical = cv2.morphologyEx(
-        binary,
-        cv2.MORPH_OPEN,
-        cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(34, int(h * 0.70)))),
-    )
+
+    def abrir(ancho, alto):
+        return cv2.morphologyEx(
+            binary,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (ancho, alto)),
+            borderType=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+
+    horizontal = abrir(max(28, int(w * 0.67)), 1)
+    vertical = abrir(1, max(34, int(h * 0.70)))
     protected = cv2.bitwise_or(horizontal, vertical)
     return cv2.dilate(protected, np.ones((5, 5), np.uint8))
 
@@ -321,26 +333,84 @@ def _contorno_blanco(
     return cerca & (gris > 215)
 
 
+def _tinta_que_sigue_afuera(
+    image: np.ndarray, region: Region, umbral: float, margen: int = 12
+) -> np.ndarray:
+    """Tinta de la región que pertenece a trazos que están sobre todo FUERA de ella.
+
+    Cuando el rectángulo corta una sombra, el borde del globo o un trozo de
+    dibujo, esa pieza entra por el borde de la selección pero sigue afuera; si se
+    rellenara, quedaría un parche con el borde recto del rectángulo. Una letra
+    cortada por una selección ajustada, en cambio, queda casi toda adentro.
+    Se mira la tinta (gris ≤ umbral) en una ventana `margen` px más grande que la
+    región y se marcan las piezas con más píxeles afuera que adentro.
+    """
+    alto_img, ancho_img = image.shape[:2]
+    x0, y0 = max(0, region.x - margen), max(0, region.y - margen)
+    x1 = min(ancho_img, region.x + region.w + margen)
+    y1 = min(alto_img, region.y + region.h + margen)
+    gris = cv2.GaussianBlur(
+        cv2.cvtColor(image[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY), (3, 3), 0
+    )
+    n, etiquetas = cv2.connectedComponents((gris <= umbral).astype(np.uint8), 8)
+    dentro = np.zeros(etiquetas.shape, bool)
+    ys = slice(region.y - y0, region.y - y0 + region.h)
+    xs = slice(region.x - x0, region.x - x0 + region.w)
+    dentro[ys, xs] = True
+    area_dentro = np.bincount(etiquetas[dentro], minlength=n)
+    area_fuera = np.bincount(etiquetas[~dentro], minlength=n)
+    afuera = area_fuera > area_dentro
+    # También lo que llega al borde de la ventana, es decir, que sigue más de
+    # `margen` px fuera de la selección: un trazo de dibujo que la cruza. Una
+    # letra cortada por una selección ajustada sobresale mucho menos. No cuentan
+    # los lados donde la ventana topa con el borde de la página.
+    exterior = np.zeros(etiquetas.shape, bool)
+    exterior[0, :] |= y0 == region.y - margen
+    exterior[-1, :] |= y1 == region.y + region.h + margen
+    exterior[:, 0] |= x0 == region.x - margen
+    exterior[:, -1] |= x1 == region.x + region.w + margen
+    afuera |= np.bincount(etiquetas[exterior], minlength=n) > 0
+    afuera[0] = False  # etiqueta 0 = papel
+    return afuera[etiquetas[ys, xs]]
+
+
+def _sin_piezas_del_borde(mascara: np.ndarray, afuera: np.ndarray) -> np.ndarray:
+    """Quita de la máscara las piezas que tocan el borde de la selección y son
+    parte de un trazo que sigue fuera de ella (ver _tinta_que_sigue_afuera).
+
+    Solo las que tocan el borde: una letra en medio de la selección se conserva
+    aunque esté pegada a una raya del fondo que sí sale de ella.
+    """
+    n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(mascara, 8)
+    alto, ancho = mascara.shape
+    x, y, w, h = stats[:, 0], stats[:, 1], stats[:, 2], stats[:, 3]
+    toca_borde = (x == 0) | (y == 0) | (x + w >= ancho) | (y + h >= alto)
+    de_afuera = np.bincount(etiquetas[afuera], minlength=n) > 0
+    quitar = toca_borde & de_afuera
+    quitar[0] = False
+    return np.where(quitar[etiquetas], 0, mascara).astype(np.uint8)
+
+
 def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarray:
     """Máscara de las letras dentro del rectángulo elegido por el usuario.
 
     Pasos: umbral (Otsu o adaptativo), componentes conectadas con filtro de
     tamaño y forma, rescate de letras unidas a rayas del fondo, descarte de
     puntos de trama, expansión hacia el antialias de las letras y, sobre dibujo,
-    el contorno blanco del texto. Los trazos largos (bordes de viñeta o de
-    globo) se excluyen. No identifica letras por su significado: la máscara se
-    debe revisar.
+    el contorno blanco del texto. Se excluyen los trazos largos (bordes de viñeta
+    o de globo) y los que entran por el borde de la selección pero siguen sobre
+    todo fuera de ella (sombras o dibujo que el rectángulo corta). No identifica
+    letras por su significado: la máscara se debe revisar.
     """
     roi = image[region.y : region.y + region.h, region.x : region.x + region.w]
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     smooth = cv2.GaussianBlur(gray, (3, 3), 0)
+    umbral, binary = cv2.threshold(
+        smooth, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    )
     if opts.threshold == 'Adaptativo':
         binary = cv2.adaptiveThreshold(
             smooth, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 23, 11
-        )
-    else:
-        _, binary = cv2.threshold(
-            smooth, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
         )
     allowed = inner_area(region)
     binary = cv2.bitwise_and(binary, allowed)
@@ -367,19 +437,23 @@ def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarra
         if _forma_de_letra(ancho, alto, area, region, min_area, max_area):
             if hay_trama and area < 30 and grosor_max[k] < GROSOR_LETRA:
                 continue  # punto de la trama
-            # Las componentes que tocan el borde de la región NO se descartan,
-            # porque con una selección ajustada las propias letras tocan ese borde.
-            # Proteger el contorno del globo queda pendiente (tarea T1.3.4).
+            # Tocar el borde de la región no basta para descartar una pieza:
+            # con una selección ajustada, las propias letras lo tocan. Lo que se
+            # descarta más abajo es lo que sigue sobre todo fuera de la región.
             chosen[labels == k] = 255
         elif area > max_area * 0.5:
             # Demasiado grande: puede ser texto unido a rayas del fondo.
             chosen |= _rescatar_letras(labels == k, grosor, region, min_area, max_area)
 
+    afuera = _tinta_que_sigue_afuera(image, region, umbral)
+    chosen = _sin_piezas_del_borde(chosen, afuera)
+    letras = chosen > 0
     blanco = _contorno_blanco(gray, chosen, allowed)
     chosen = _expandir(gray, chosen, opts.expansion)
     chosen[blanco] = 255
     chosen = cv2.bitwise_and(chosen, allowed)
-    chosen[protected > 0] = 0
+    # La expansión tampoco puede crecer sobre lo que sigue afuera.
+    chosen[(protected > 0) | (afuera & ~letras)] = 0
     region.mask = chosen
     region.mask_edited = False
     describe_background(image, region)
@@ -487,7 +561,7 @@ def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, 
 # región de desarrollo (da lo mismo entre 0,6 y 0,95), así que se fija en el
 # medio: solo aparta del «Uniforme» las tramas ralas que cubren toda la zona,
 # como la del globo «¿QUÉ PASÓ?» de la página de ejemplo.
-ENTROPIA_LISO = 1.5  # bits: por debajo, el fondo es papel liso
+ENTROPIA_LISO = 2.0  # bits: por debajo, el fondo es papel liso
 TONO_TINTA = (
     40  # gris: si el 10 % más oscuro del fondo baja de aquí, hay tinta de dibujo
 )

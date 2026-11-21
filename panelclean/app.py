@@ -135,7 +135,7 @@ class PanelCleanApp:
         self.method = tk.StringVar(value='Automático')
         self.tool = tk.StringVar(value='Seleccionar')
         self.sensitivity = tk.IntVar(value=4)
-        self.expansion = tk.IntVar(value=1)
+        self.expansion = tk.IntVar(value=Options().expansion)
         self.radius = tk.IntVar(value=3)
         self.brush = tk.IntVar(value=5)
         self.zoom = 1.0

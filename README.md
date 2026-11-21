@@ -42,7 +42,7 @@ El [manual](MANUAL.md) explica cada control, cómo corregir la máscara y qué h
 
 ## Estado de la beta
 
-La versión actual cubre el flujo completo. Todavía puede fallar cuando la selección incluye trazos del dibujo o fondos muy complejos, y no detecta el texto escrito sobre un fondo casi negro. Por eso la máscara se muestra antes de aplicar la limpieza, existe corrección manual y el modo automático deja para revisión los casos dudosos. Las limitaciones medidas están en la sección 9 del [manual](MANUAL.md) y en los [resultados de la evaluación](evaluacion/resultados/resumen.md).
+La versión actual cubre el flujo completo. Todavía puede fallar con texto sobre dibujo o fondos muy complejos, y no detecta letras blancas sobre fondo negro. Por eso la máscara se muestra antes de aplicar la limpieza, existe corrección manual y el modo automático deja para revisión los casos dudosos. Las limitaciones medidas están en la sección 9 del [manual](MANUAL.md) y en los [resultados de la evaluación](evaluacion/resultados/resumen.md).
 
 ## Estructura del repositorio
 
