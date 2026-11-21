@@ -419,15 +419,43 @@ def cargar_openmantra() -> list[dict]:
     return json.loads((DATASET / 'annotation.json').read_text(encoding='utf-8'))
 
 
+def dibujo_en_modo_automatico(
+    imagen: np.ndarray, regiones: list[V.Region], textos: list[tuple]
+) -> dict:
+    """Qué haría «Limpiar todas» en automático con estas regiones.
+
+    Cuenta las regiones que se limpiarían y las que quedan para revisión, y los
+    píxeles de máscara de las que se limpiarían, separando los que caen dentro de
+    una caja de texto anotada de los que caen fuera (dibujo que se borraría).
+    """
+    en_texto = np.zeros(imagen.shape[:2], bool)
+    for x1, y1, x2, y2 in textos:
+        en_texto[y1:y2, x1:x2] = True
+    cuenta = {'auto_limpiadas': 0, 'auto_revision': 0, 'px_texto': 0, 'px_dibujo': 0}
+    for r in regiones:
+        mascara = V.generate_mask(imagen, r, V.Options()) > 0
+        if r.suggested_method == 'Revisión manual':
+            cuenta['auto_revision'] += 1
+            continue
+        cuenta['auto_limpiadas'] += 1
+        zona = en_texto[r.y : r.y + r.h, r.x : r.x + r.w]
+        cuenta['px_texto'] += int((mascara & zona).sum())
+        cuenta['px_dibujo'] += int((mascara & ~zona).sum())
+    return cuenta
+
+
 def evaluar_deteccion(datos: list[dict], por_libro: int | None = None) -> list[dict]:
-    """Corre detect_bubbles en cada página y cuenta aciertos con los dos criterios."""
+    """Corre detect_bubbles en cada página y cuenta aciertos con los dos criterios.
+
+    También mide qué borraría el modo automático si se limpiaran todas las
+    regiones detectadas sin revisarlas.
+    """
     filas = []
     for libro in datos:
         for pagina in libro['pages'][:por_libro]:
             imagen = V.bgr_from_file(str(DATASET / pagina['image_paths']['ja']))
-            detecciones = [
-                (r.x, r.y, r.x + r.w, r.y + r.h) for r in V.detect_bubbles(imagen)
-            ]
+            regiones = V.detect_bubbles(imagen)
+            detecciones = [(r.x, r.y, r.x + r.w, r.y + r.h) for r in regiones]
             textos = [
                 (t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h'])
                 for t in pagina['text']
@@ -442,6 +470,7 @@ def evaluar_deteccion(datos: list[dict], por_libro: int | None = None) -> list[d
                     'textos_acertados': acertados,
                     'detecciones_correctas': correctas,
                     'aciertos_iou50': M.aciertos_por_iou(detecciones, textos),
+                    **dibujo_en_modo_automatico(imagen, regiones, textos),
                 }
             )
     return filas
@@ -493,6 +522,23 @@ def resumen_deteccion(filas: list[dict]) -> tuple[str, float, float]:
             ],
             filas_tabla,
         )
+    )
+    partes.append('')
+    limpiadas = sum(f['auto_limpiadas'] for f in filas)
+    revision = sum(f['auto_revision'] for f in filas)
+    dibujo = sum(f['px_dibujo'] for f in filas)
+    total_px = dibujo + sum(f['px_texto'] for f in filas)
+    miles = f'{dibujo:,}'.replace(',', '.')
+    area = f'{V.AREA_REVISAR:,}'.replace(',', '.')
+    partes.append(
+        '**Modo automático después de «Detectar globos».** Si se limpian todas las '
+        f'regiones detectadas sin revisarlas, el modo automático limpia {limpiadas} '
+        f'y deja {revision} para revisión. De los píxeles que borra, {miles} '
+        f'({num(100 * dibujo / max(1, total_px), 0)} %) están fuera de las cajas de '
+        'texto anotadas: es dibujo que se pierde. Las regiones de más del '
+        f'{num(100 * V.FRACCION_PAGINA_REVISAR, 0)} % de la página (y más de {area} '
+        'px) quedan para revisión, porque casi nunca son solo texto: suelen ser '
+        'viñetas enteras.'
     )
     prueba = [f for f in filas if f['libro'] == LIBRO_PRUEBA]
     f1_prueba = medir(prueba)[1] if prueba else float('nan')

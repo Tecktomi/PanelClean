@@ -122,7 +122,7 @@ El panel **Selección** muestra la clase de fondo que PanelClean encontró detr�
 | **Uniforme** | Papel liso, blanco o gris | **Relleno local**: pinta con el tono del papel que rodea a las letras |
 | **Estructurado** | Trama de puntos, rayado o degradado, sin negro | **Inpainting Telea**: reconstruye el fondo a partir de sus bordes |
 | **Complejo / revisar** | Dibujo, con trazos negros | No limpia: queda para que la revises (sección 5) |
-| **Revisar máscara** (en naranja) | La máscara cubre más del 36 % de la región | No limpia: probablemente la máscara incluye dibujo |
+| **Revisar máscara** (en naranja) | La máscara cubre más del 36 % de la región, o la región ocupa más del 5 % de la página (y más de 40 000 px) | No limpia: probablemente la máscara incluye dibujo |
 
 Las medidas del panel explican la decisión: la **entropía** indica cuántos tonos distintos hay en el fondo (pocos = papel liso), la **textura** qué parte del fondo tiene trama, y el **tono oscuro** cuán oscuro es lo más oscuro del fondo (cerca de 0 = hay tinta de dibujo).
 
@@ -184,7 +184,7 @@ Tras la corrección, el fondo incluye la trama del pelo, la clase pasa a **Estru
 
 ![Candidatos de Detectar globos: R01 y R03 son viñetas, no globos](docs/manual/08_detectar.png)
 
-Si limpias esos candidatos sin revisarlos, se borra buena parte del dibujo. **Antes de limpiar:**
+Una región así es demasiado grande para ser solo texto, y su máscara incluye dibujo. Por eso, las regiones que ocupan más del 5 % de la página quedan en **Revisar máscara** y el modo automático no las limpia. En las pruebas con páginas reales, esto evita el 90 % del dibujo que se habría borrado al limpiar todas las detecciones sin revisarlas. Aun así, el resto todavía puede incluir algo de dibujo. **Antes de limpiar:**
 
 1. Elige los candidatos que no son globos y pulsa **Quitar**.
 2. Marca a mano el texto que el detector no encontró.

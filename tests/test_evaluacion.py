@@ -134,6 +134,19 @@ class SelectorTest(unittest.TestCase):
         self.assertEqual(V.classify_background(2.8, 150)[0], 'Estructurado')
         self.assertEqual(V.classify_background(3.5, 5)[0], 'Complejo / revisar')
         self.assertEqual(V.classify_background(0.3, 250, 0.5)[0], 'Revisar máscara')
+        # Región grande: queda para revisión solo si es grande en píxeles y en la página.
+        self.assertEqual(
+            V.classify_background(0.3, 250, area=90_000, page_fraction=0.1)[0],
+            'Revisar máscara',
+        )
+        self.assertEqual(
+            V.classify_background(0.3, 250, area=90_000, page_fraction=0.03)[0],
+            'Uniforme',
+        )
+        self.assertEqual(
+            V.classify_background(0.3, 250, area=30_000, page_fraction=0.4)[0],
+            'Uniforme',
+        )
         # Trama rala: pocos tonos, pero repartida por toda la zona.
         self.assertEqual(
             V.classify_background(0.8, 170, texture=0.97)[0], 'Estructurado'

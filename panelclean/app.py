@@ -1126,8 +1126,8 @@ class PanelCleanApp:
                     ):
                         confirmed = messagebox.askyesno(
                             'Confirmar limpieza',
-                            f'La máscara de R{r.id:02d} ocupa demasiado espacio y podría incluir el dibujo.\n\n'
-                            '¿Deseas aplicar el método manual de todas formas?',
+                            f'R{r.id:02d}: {r.review_reason}\n\n'
+                            '¿Deseas aplicar el método elegido de todas formas?',
                         )
                         if not confirmed:
                             self.applied_ids.discard(r.id)

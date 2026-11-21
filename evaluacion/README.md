@@ -17,7 +17,7 @@ Tarda alrededor de un minuto en un portátil. Con `--rapido` corre una versión 
 
 | # | Métrica | Tarea | Datos | Definición | Meta (Hito 1) |
 |---|---|---|---|---|---|
-| 1 | Detección: precisión, recall, F1 | T1.2.3 | OpenMantra, 214 páginas | Una caja de texto está acertada si ≥ 80 % de su área queda dentro de una región detectada; una detección es correcta si contiene así algún texto. Se informa también el F1 estándar (uno a uno, IoU ≥ 0,5) | F1 ≥ 0,85 |
+| 1 | Detección: precisión, recall, F1 | T1.2.3 | OpenMantra, 214 páginas | Una caja de texto está acertada si ≥ 80 % de su área queda dentro de una región detectada; una detección es correcta si contiene así algún texto. Se informa también el F1 estándar (uno a uno, IoU ≥ 0,5), y cuánto dibujo borraría el modo automático si se limpiaran todas las detecciones sin revisarlas | F1 ≥ 0,85 |
 | 2 | Máscara: IoU, Dice, cobertura, exceso | T1.4.2 | 150 pares sintéticos | Contra los píxeles que el texto cambió respecto del fondo limpio, con los ajustes por defecto de la aplicación | IoU ≥ 0,80 |
 | 3 | Selector: exactitud, macro-F1, matriz de confusión | T2.4.4 | Sintéticos (clase por construcción) y regiones reales etiquetadas | Regla de entropía, tono oscuro y textura (`classify_background`), sin el aviso «Revisar máscara». En reales se informa la validación cruzada por obra | Macro-F1 ≥ 0,80 |
 | 4 | Limpieza: MAE, PSNR, SSIM | T2.4.1 | Sintéticos | Salida vs. fondo limpio, en gris, dentro de la selección | Sin meta |

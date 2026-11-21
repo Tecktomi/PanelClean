@@ -158,6 +158,23 @@ class FondoTest(unittest.TestCase):
         self.assertEqual(r.classification, 'Estructurado')
         self.assertEqual(r.suggested_method, 'Inpainting Telea')
 
+    def test_una_vineta_entera_queda_para_revision(self):
+        # Una viñeta completa (como los candidatos grandes de «Detectar globos»)
+        # no se limpia sola: su máscara incluiría dibujo.
+        r = self.clasificar((720, 500, 1390, 970))
+        self.assertEqual(r.classification, 'Revisar máscara')
+        out, _, n = V.clean_region(self.img, r, self.opts)
+        self.assertEqual(n, 0)
+        self.assertTrue(np.array_equal(out, self.img))
+
+    def test_en_una_imagen_recortada_el_tamano_no_bloquea(self):
+        # En una imagen chica cualquier selección es gran parte de ella; bajo
+        # AREA_REVISAR píxeles el tamaño no la deja para revisión.
+        recorte = self.img[300:480, 380:640].copy()  # alrededor de «¿DÓNDE ESTÁS?»
+        r = V.bounded_region(recorte, (35, 40, 210, 145))
+        V.generate_mask(recorte, r, self.opts)
+        self.assertEqual(r.classification, 'Uniforme')
+
 
 class LimpiezaTest(unittest.TestCase):
     """La limpieza nunca debe modificar píxeles fuera de la máscara (meta del Hito 1)."""

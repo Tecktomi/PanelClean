@@ -460,7 +460,15 @@ def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, 
     edge_density = float(edge[valid].mean()) if valid.any() else 0.0
     allowed = inner_area(region)
     coverage = float(cv2.countNonZero(mask) / max(1, cv2.countNonZero(allowed)))
-    name, method, reason = classify_background(entropy, dark_level, coverage, texture)
+    area = region.w * region.h
+    name, method, reason = classify_background(
+        entropy,
+        dark_level,
+        coverage,
+        texture,
+        area=area,
+        page_fraction=area / (image.shape[0] * image.shape[1]),
+    )
     region.review_reason = reason
     region.variance = var
     region.edge_density = edge_density
@@ -485,6 +493,15 @@ TONO_TINTA = (
 )
 TEXTURA_REPARTIDA = 0.8  # fracción de la zona con variación local: más, es una trama
 
+# Una región muy grande casi nunca es solo texto: suele ser una viñeta entera
+# (por ejemplo, un candidato de «Detectar globos») y su máscara incluye dibujo.
+# Medido en OpenMantra: estos dos límites dejan para revisión el 84 % de las
+# regiones detectadas cuya máscara es sobre todo dibujo, y solo el 0,8 % de las
+# cajas de texto reales. Se piden ambos para no bloquear todo en una imagen
+# recortada, donde cualquier selección es una parte grande de la imagen.
+FRACCION_PAGINA_REVISAR = 0.05  # de la página
+AREA_REVISAR = 40_000  # píxeles
+
 
 def classify_background(
     entropy: float,
@@ -492,15 +509,19 @@ def classify_background(
     coverage: float = 0.0,
     texture: float = 0.0,
     umbrales: Optional[tuple[float, float]] = None,
+    *,
+    area: int = 0,
+    page_fraction: float = 0.0,
 ) -> tuple[str, str, str]:
     """Regla del selector: devuelve (clase, método sugerido, motivo de revisión).
 
     entropy (bits), dark_level (percentil 10 de gris) y texture (fracción con
     variación local) describen el fondo cercano al texto. coverage es la
-    fracción del área útil que cubre la máscara; con coverage = 0 se aplica solo
-    la regla de fondo (así la usa la evaluación). umbrales = (entropía, tono)
-    reemplaza a ENTROPIA_LISO y TONO_TINTA; solo lo usa la calibración para
-    probar otros valores.
+    fracción del área útil que cubre la máscara, y area y page_fraction el
+    tamaño de la región en píxeles y como fracción de la página; con sus valores
+    por defecto se aplica solo la regla de fondo (así la usa la evaluación).
+    umbrales = (entropía, tono) reemplaza a ENTROPIA_LISO y TONO_TINTA; solo lo
+    usa la calibración para probar otros valores.
 
     - Uniforme: pocos tonos (entropía baja) y sin una trama que cubra toda la
       zona. Basta rellenar con la mediana.
@@ -509,8 +530,16 @@ def classify_background(
     - Estructurado: muchos tonos pero sin negro, como una trama, un rayado fino
       o un degradado. Se reconstruye con inpainting.
     """
-    # Guardarraíl: una máscara que cubre gran parte de su zona puede estar
-    # incluyendo dibujo o borde, no solo letras.
+    # Guardarraíles: una región demasiado grande, o una máscara que cubre gran
+    # parte de su zona, probablemente incluyen dibujo o bordes, no solo letras.
+    if area > AREA_REVISAR and page_fraction > FRACCION_PAGINA_REVISAR:
+        return (
+            'Revisar máscara',
+            'Revisión manual',
+            f'La región ocupa el {page_fraction:.0%} de la página: es grande para '
+            'ser solo texto y la máscara puede incluir dibujo. Revísala o marca '
+            'solo las letras.',
+        )
     if coverage > 0.36:
         return (
             'Revisar máscara',

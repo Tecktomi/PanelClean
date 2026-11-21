@@ -15,7 +15,7 @@ Los intervalos entre corchetes son de confianza del 95 % (bootstrap). Los datos 
 | Selector (macro-F1, regiones reales, validación cruzada por obra) | ≥ 0,80 | 0,61 | No |
 | Reconstrucción (MAE/PSNR/SSIM) | sin meta | ver sección 3 | — |
 | Conservación (píxeles fuera de la máscara) | 0 | 0 | Sí |
-| Rendimiento (máximo por página de 2048 px) | ≤ 15 s | 1,20 s | Sí |
+| Rendimiento (máximo por página de 2048 px) | ≤ 15 s | 0,98 s | Sí |
 | Hipótesis: adaptativo vs. mejor método único (máscara perfecta) | adaptativo mejor | MAE: peor · PSNR: mejor · SSIM: peor | — |
 | Hipótesis: adaptativo vs. mejor método único (máscara del sistema) | adaptativo mejor | MAE: sin diferencia significativa · PSNR: sin diferencia significativa · SSIM: sin diferencia significativa | — |
 
@@ -123,13 +123,15 @@ Detector actual: `detect_bubbles` (heurístico, busca globos ovalados). Una caja
 | rasetugari | 54 | 359 | 400 | 0,52 | 0,62 | **0,57** | 0,23 |
 | **Todas** | 214 | 1592 | 1377 | 0,56 | 0,52 | **0,54** | 0,20 |
 
+**Modo automático después de «Detectar globos».** Si se limpian todas las regiones detectadas sin revisarlas, el modo automático limpia 1124 y deja 253 para revisión. De los píxeles que borra, 146.010 (15 %) están fuera de las cajas de texto anotadas: es dibujo que se pierde. Las regiones de más del 5 % de la página (y más de 40.000 px) quedan para revisión, porque casi nunca son solo texto: suelen ser viñetas enteras.
+
 ## 6. Rendimiento
 
 20 páginas de OpenMantra repartidas entre las cinco obras, ampliadas a 2048 px de lado mayor. Se mide detectar regiones, crear sus máscaras y limpiarlas en modo automático (sin contar abrir el archivo).
 
 | Mediana (s) | Máximo (s) | Regiones por página (media) | Meta |
 |---|---|---|---|
-| 0,37 | 1,20 | 7,8 | ≤ 15 s |
+| 0,38 | 0,98 | 7,8 | ≤ 15 s |
 
 Equipo: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz, 8 hilos, Windows 10.
 
