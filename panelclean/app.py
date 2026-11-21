@@ -490,7 +490,8 @@ class PanelCleanApp:
             self.advanced_frame.pack_forget()
             self.advanced_button.configure(text='Ajustes avanzados  ▾')
         else:
-            self.advanced_frame.pack(fill='x', padx=17)
+            # Justo debajo del botón, no al final del panel.
+            self.advanced_frame.pack(fill='x', padx=17, after=self.advanced_button)
             self.advanced_button.configure(text='Ajustes avanzados  ▴')
         self._advanced_open = not self._advanced_open
 
