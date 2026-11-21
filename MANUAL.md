@@ -43,7 +43,7 @@ Todo lo que instala PanelClean queda dentro de su propia carpeta (en `.venv`). N
 
 Si ves esta ventana con la página de ejemplo, PanelClean quedó instalado:
 
-![PanelClean recién abierto, con la página de ejemplo](docs/manual/01_ventana.png)
+![PanelClean recién abierto, con la página de ejemplo](docs/manual/ventana_inicial.png)
 
 ### Linux
 
@@ -69,7 +69,7 @@ El lanzador avisa si falta algo y dice cómo instalarlo. Nota: el lanzador de Li
 
 ## 3. La ventana
 
-![Partes de la ventana, numeradas](docs/manual/00_interfaz.png)
+![Partes de la ventana, numeradas](docs/manual/interfaz.png)
 
 | # | Parte | Para qué sirve |
 |---|---|---|
@@ -98,7 +98,7 @@ Pulsa **Abrir imagen** (o `Ctrl + O`) y elige el archivo. Acepta PNG, JPG, BMP y
 
 Con la herramienta **Seleccionar**, arrastra en la vista ORIGINAL un rectángulo **ajustado a las letras**, sin incluir el contorno del globo. Cada rectángulo es una región (R01, R02…). Puedes marcar varias.
 
-![Tres regiones marcadas sobre la página de ejemplo](docs/manual/02_regiones.png)
+![Tres regiones marcadas sobre la página de ejemplo](docs/manual/regiones.png)
 
 - Un clic sobre una región la elige; `Ctrl + clic` la suma o la quita de la selección. En la lista, `Ctrl` o `Shift + clic` eligen varias.
 - Las regiones elegidas se ven en celeste; las demás, en naranja.
@@ -109,7 +109,7 @@ Con la herramienta **Seleccionar**, arrastra en la vista ORIGINAL un rectángulo
 
 Pulsa **Crear máscaras**. Las letras que PanelClean va a borrar se tiñen de rosa.
 
-![Máscaras creadas: las letras se ven en rosa](docs/manual/03_mascaras.png)
+![Máscaras creadas: las letras se ven en rosa](docs/manual/mascaras.png)
 
 **Revisa el rosa antes de limpiar.** Todo lo rosa se va a borrar y reconstruir. Si cubre parte del dibujo o deja letras sin cubrir, corrígelo (sección 5).
 
@@ -135,7 +135,7 @@ Si no estás de acuerdo, elige otro **Método** en el panel Limpieza: se aplica 
 
 La barra de estado dice cuántas se limpiaron, con qué método y cuáles quedaron pendientes. La limpieza **nunca cambia un píxel fuera de la máscara**. Con la rueda del ratón puedes acercarte para comparar ambas vistas:
 
-![De cerca: el globo blanco antes y después](docs/manual/05_detalle_liso.png)
+![De cerca: el globo blanco antes y después](docs/manual/detalle_globo_liso.png)
 
 ### Paso 6 · Comparar, deshacer y quitar
 
@@ -157,7 +157,7 @@ Pulsa **Exportar** (`Ctrl + S`) y elige dónde guardar. Se crean tres archivos; 
 
 La máscara se calcula por el tono y la forma de los trazos, no por el significado de las letras. Si una parte del dibujo es tan oscura y delgada como una letra, puede quedar marcada. En este ejemplo real, la región toca el pelo de un personaje y la máscara se lleva parte de él:
 
-![La máscara cubre parte del pelo del personaje](docs/manual/07_falla.png)
+![La máscara cubre parte del pelo del personaje](docs/manual/mascara_con_dibujo.png)
 
 Peor aún: como el pelo quedó dentro de la máscara, lo que rodea a las letras es papel blanco y la clase dice **Uniforme**. Si se limpiara así, la cabeza quedaría pintada de blanco. Por eso conviene revisar siempre el rosa.
 
@@ -167,7 +167,7 @@ Peor aún: como el pelo quedó dentro de la máscara, lo que rodea a las letras 
 2. Pinta sobre lo rosa que no es texto. Al soltar el botón, el fondo se vuelve a analizar.
 3. Limpia otra vez.
 
-![Máscara corregida con el pincel y región limpiada](docs/manual/07b_corregida.png)
+![Máscara corregida con el pincel y región limpiada](docs/manual/mascara_corregida.png)
 
 Tras la corrección, el fondo incluye la trama del pelo, la clase pasa a **Estructurado** y la limpieza reconstruye la zona en vez de pintarla de blanco.
 
@@ -182,7 +182,7 @@ Tras la corrección, el fondo incluye la trama del pelo, la clase pasa a **Estru
 
 **Detectar globos** busca contornos ovalados con tinta adentro y los agrega como regiones. Es un atajo para páginas con muchos globos, pero **todavía se equivoca a menudo**: en las pruebas con páginas reales encontró alrededor de la mitad de los textos, y cerca de la mitad de lo que propuso no era un globo con texto. Por ejemplo, puede proponer viñetas completas, como R01 y R03 aquí:
 
-![Candidatos de Detectar globos: R01 y R03 son viñetas, no globos](docs/manual/08_detectar.png)
+![Candidatos de Detectar globos: R01 y R03 son viñetas, no globos](docs/manual/detectar_globos.png)
 
 Una región así es demasiado grande para ser solo texto, y su máscara incluye dibujo. Por eso, las regiones que ocupan más del 5 % de la página quedan en **Revisar máscara** y el modo automático no las limpia. En las pruebas con páginas reales, esto evita el 90 % del dibujo que se habría borrado al limpiar todas las detecciones sin revisarlas. Aun así, el resto todavía puede incluir algo de dibujo. **Antes de limpiar:**
 
@@ -192,13 +192,13 @@ Una región así es demasiado grande para ser solo texto, y su máscara incluye 
 
 Con los candidatos revisados y el resto del texto marcado a mano, la página queda así:
 
-![Página real limpiada tras revisar los candidatos](docs/manual/09_pagina_real.png)
+![Página real limpiada tras revisar los candidatos](docs/manual/pagina_real_limpia.png)
 
 ## 7. Ajustes avanzados
 
 Se abren con **Ajustes avanzados** en el panel izquierdo. Después de cambiar uno, pulsa **Crear máscaras** para recalcular.
 
-![Ajustes avanzados abiertos](docs/manual/06_ajustes.png)
+![Ajustes avanzados abiertos](docs/manual/ajustes_avanzados.png)
 
 | Ajuste | Qué hace | Cuándo cambiarlo |
 |---|---|---|
@@ -227,7 +227,7 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 
 - **Tramas y degradados.** El inpainting no reproduce bien un patrón regular: donde estaban las letras queda una zona más clara o borrosa.
 
-  ![De cerca: el globo con trama antes y después](docs/manual/05_detalle_trama.png)
+  ![De cerca: el globo con trama antes y después](docs/manual/detalle_globo_trama.png)
 
 - **Texto sobre dibujo.** La máscara confunde con letras los trazos de dibujo de grosor parecido (sección 5). Es el caso con peores resultados en las pruebas.
 - **Texto sobre fondo casi negro.** No se detecta: la umbralización junta las letras y el fondo oscuro.

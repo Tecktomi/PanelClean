@@ -1,6 +1,12 @@
-# PanelClean - Hito 2
+# PanelClean
 
-PanelClean es una beta de escritorio para apoyar la limpieza de texto dentro de globos de manga. La aplicación permite seleccionar las letras, crear una máscara, aplicar una limpieza y comparar el resultado antes de exportarlo.
+Aplicación de escritorio para limpiar el texto de los globos de manga: separa las letras del dibujo, reconoce el tipo de fondo que hay detrás y elige cómo reconstruirlo. Antes de guardar se puede revisar, corregir y deshacer todo.
+
+Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026) · versión 0.3.1-beta.
+
+- **[Manual de instalación y usuario](MANUAL.md)**, con capturas (también en PDF: [`docs/Manual_PanelClean.pdf`](docs/Manual_PanelClean.pdf)).
+- **[Resultados de la evaluación](evaluacion/resultados/resumen.md)** frente a las metas del Hito 1.
+- **Bitácora** del proyecto: [`Bitacora_PanelClean.xlsx`](Bitacora_PanelClean.xlsx).
 
 ## Ejecutar en Windows
 
@@ -24,21 +30,34 @@ En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
 ## Uso básico
 
-El **[manual de instalación y usuario](MANUAL.md)** explica cada control con capturas, cómo corregir la máscara y qué hacer si algo falla (también en PDF: `Manual_PanelClean.pdf`). En resumen:
+El [manual](MANUAL.md) explica cada control, cómo corregir la máscara y qué hacer si algo falla. En resumen:
 
 1. `Abrir imagen` para cargar una página o `Ejemplo` para usar la imagen incluida.
 2. En la vista Original, arrastra un rectángulo ajustado alrededor de las letras que quieres limpiar.
 3. Puedes seleccionar varias regiones.
-4. Pulsa `Crear máscaras` y revisa la zona marcada.
+4. Pulsa `Crear máscaras` y revisa la zona marcada en rosa.
 5. Pulsa `Limpiar selección`.
 6. Compara el resultado y usa `Deshacer` si es necesario.
 7. Pulsa `Exportar` para guardar la página limpia.
 
 ## Estado de la beta
 
-La versión actual demuestra el flujo principal del proyecto. Todavía puede fallar cuando la selección incluye líneas del dibujo, marcos de viñetas o fondos muy complejos, y no detecta el texto escrito sobre un fondo casi negro. Por eso la máscara se muestra antes de aplicar la limpieza y existe corrección manual.
+La versión actual cubre el flujo completo. Todavía puede fallar cuando la selección incluye trazos del dibujo o fondos muy complejos, y no detecta el texto escrito sobre un fondo casi negro. Por eso la máscara se muestra antes de aplicar la limpieza, existe corrección manual y el modo automático deja para revisión los casos dudosos. Las limitaciones medidas están en la sección 9 del [manual](MANUAL.md) y en los [resultados de la evaluación](evaluacion/resultados/resumen.md).
 
-El informe breve `Informe_Hito2_PanelClean.pdf` resume el funcionamiento, la relación con TEL-328 y las mejoras pendientes.
+## Estructura del repositorio
+
+| Ruta | Contenido |
+|---|---|
+| `INICIAR_WINDOWS.bat`, `INICIAR_LINUX.sh` | Lanzadores: instalan lo necesario la primera vez y abren la aplicación |
+| `main.py`, `requirements.txt` | Punto de entrada y dependencias (NumPy, OpenCV, Pillow) |
+| `panelclean/` | La aplicación: `vision.py` (máscara, clasificación del fondo y limpieza) y `app.py` (interfaz) |
+| `tests/` | Pruebas automáticas |
+| `evaluacion/` | Evaluación de las metas del Hito 1, con sus resultados en `evaluacion/resultados/` ([detalle](evaluacion/README.md)) |
+| `ETIQUETAR_WINDOWS.bat` | Abre la herramienta para etiquetar el fondo de regiones reales (la usa la evaluación) |
+| `examples/` | Página de ejemplo que abre el botón `Ejemplo` |
+| `datasets/open-mantra/` | Páginas de manga reales usadas en la evaluación ([créditos](datasets/README.md)) |
+| `docs/` | Entregas del curso (presentación del Hito 1, informe del Hito 2), el manual en PDF y sus capturas |
+| `MANUAL.md`, `Bitacora_PanelClean.xlsx` | Manual de instalación y usuario, y bitácora del proyecto |
 
 ## Pruebas automáticas
 
@@ -49,7 +68,7 @@ Las pruebas están en `tests/` y usan solo la biblioteca estándar de Python. Co
 .venv/bin/python -m unittest discover tests          # Linux
 ```
 
-Comprueban, entre otras cosas, que la limpieza no modifique ningún píxel fuera de la máscara, que el globo blanco se clasifique como «Uniforme» y el de trama como «Estructurado», y que «Quitar» y «Deshacer» funcionen juntos.
+Comprueban, entre otras cosas, que la limpieza no modifique ningún píxel fuera de la máscara, que cada tipo de fondo se clasifique bien, que una viñeta entera no se limpie sola y que «Quitar» y «Deshacer» funcionen juntos.
 
 ## Evaluación
 
@@ -62,8 +81,15 @@ La carpeta `evaluacion/` mide las metas del Hito 1: detección, máscara, select
 
 Los resultados quedan en `evaluacion/resultados/resumen.md`. Para etiquetar el fondo de regiones reales (lo necesita la métrica del selector), en Windows basta con hacer doble clic en `ETIQUETAR_WINDOWS.bat`. El detalle de cada métrica está en [`evaluacion/README.md`](evaluacion/README.md).
 
+## Documentos del curso
+
+- [`docs/PanelClean_Presentacion_Hito1.pdf`](docs/PanelClean_Presentacion_Hito1.pdf): propuesta, arquitectura y plan de validación.
+- [`docs/Informe_Hito2_PanelClean.pdf`](docs/Informe_Hito2_PanelClean.pdf): funcionamiento de la beta, relación con TEL-328 y mejoras pendientes.
+- [`docs/Manual_PanelClean.pdf`](docs/Manual_PanelClean.pdf): el manual de instalación y usuario en PDF.
+
 ## Datos incluidos y créditos
 
 - `examples/demo_pagina.png`: página sintética de ejemplo que abre el botón `Ejemplo`.
 - `datasets/open-mantra/`: **OpenMantra dataset**, de R. Hinami, S. Ishiwatari, K. Yasuda y Y. Matsui («Towards Fully Automated Manga Translation», AAAI 2021), descargado de <https://github.com/mantra-inc/open-mantra-dataset>. Son 214 páginas de cinco mangas japoneses con 1592 bloques de texto anotados, bajo licencia **CC BY-NC 4.0** (uso no comercial). No es obra del equipo; se incluye sin modificar para entrenar y evaluar la detección de texto. Los detalles, la licencia y la cita están en [`datasets/README.md`](datasets/README.md).
 - `evaluacion/fuentes/NotoSansJP-Bold.otf`: fuente **Noto Sans JP** de Google ([github.com/notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)), bajo licencia **SIL Open Font License 1.1** (incluida en `evaluacion/fuentes/OFL.txt`). Se usa para escribir el texto japonés de los pares sintéticos.
+- Las capturas de páginas reales del manual también son de OpenMantra.
