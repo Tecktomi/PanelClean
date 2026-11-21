@@ -59,12 +59,54 @@ class AppTest(unittest.TestCase):
             for nombre in ('pagina.png', 'pagina_mascara.png', 'pagina_reporte.json'):
                 self.assertTrue((Path(tmp) / nombre).exists(), nombre)
 
-    def test_los_ids_crecen_y_no_se_repiten(self):
+    def test_los_nombres_reusan_numeros_libres_y_los_ids_no_se_repiten(self):
+        # El id interno (lo usa «Deshacer») nunca se repite; el nombre visible
+        # (R01, R02…) toma el menor número libre, así no quedan saltos.
         self.assertEqual([r.id for r in self.app.regions], [1, 2, 3])
-        self.seleccionar(2)
+        self.seleccionar(1)
         self.app.remove_region()
-        nueva = self.app.add_region(TEXTOS[2])
+        nueva = self.app.add_region(TEXTOS[1])
         self.assertEqual(nueva.id, 4)
+        self.assertEqual(self.app._nombre(nueva), 'R02')
+        self.app.remove_all()
+        self.assertEqual(self.app._nombre(self.app.add_region(TEXTOS[0])), 'R01')
+
+    def test_quitar_quita_solo_la_region_elegida(self):
+        self.seleccionar(0, 2)  # con foco en la última elegida
+        self.app.remove_region()
+        self.assertEqual(
+            [self.app._nombre(r) for r in self.app.regions], ['R01', 'R02']
+        )
+
+    def test_quitar_todo_se_puede_deshacer(self):
+        self.seleccionar(0, 1, 2)
+        self.app.clean_selected()
+        limpia = self.app.working.copy()
+        self.app.remove_all()
+        self.assertEqual(self.app.regions, [])
+        self.assertTrue(np.array_equal(self.app.working, self.app.original))
+        self.app.undo()
+        self.assertEqual(len(self.app.regions), 3)
+        self.assertTrue(np.array_equal(self.app.working, limpia))
+
+    def test_paneles_se_ocultan_y_se_muestran(self):
+        self.root.deiconify()
+        self.app.toggle_panel('left')
+        self.root.update()
+        self.assertFalse(self.app.left_panel.winfo_ismapped())
+        self.app.toggle_panel('left')
+        self.root.update()
+        self.assertTrue(self.app.left_panel.winfo_ismapped())
+
+    def test_sin_imagen_muestra_el_boton_agregar(self):
+        ventana = tk.Toplevel(self.root)
+        app = A.PanelCleanApp(ventana)
+        ventana.update()
+        app.render_views()
+        lienzo = app.view_canvases['left']
+        self.assertIsNone(app.original)
+        self.assertIn('window', [lienzo.type(i) for i in lienzo.find_all()])
+        ventana.destroy()
 
     # --- errores corregidos ----------------------------------------------
     def test_quitar_se_puede_deshacer(self):

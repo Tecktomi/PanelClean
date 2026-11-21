@@ -34,6 +34,7 @@ class Region:
     w: int
     h: int
     id: int = 0
+    numero: int = 0  # número visible en la interfaz (R01, R02…)
     origin: str = 'Manual'
     interior: Optional[np.ndarray] = field(default=None, repr=False)
     mask: Optional[np.ndarray] = field(default=None, repr=False)

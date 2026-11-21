@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import shutil
+import sys
+from functools import lru_cache
 from pathlib import Path
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, ttk
 import cv2
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 from . import __version__
 from .vision import (
@@ -26,25 +30,157 @@ from .vision import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
+FUENTES = Path(__file__).resolve().parent / 'fuentes'
+
+# Paleta «Sakura» clara: fondos rosa pálido, acento rosa cerezo y texto ciruela.
 C = {
-    'bg': '#090f1a',
-    'top': '#0c1524',
-    'panel': '#121e30',
-    'panel2': '#18273b',
-    'line': '#283b51',
-    'text': '#edf4fa',
-    'muted': '#8fa4bb',
-    'cyan': '#43d8c6',
-    'cyan2': '#16434a',
-    'orange': '#f4b96e',
-    'red': '#fb7a88',
-    'canvas': '#0b1421',
-    'select': '#193c46',
-    'white': '#ffffff',
-    'good': '#65dcc6',
+    'bg': '#fff7f9',  # fondo de la ventana y de las tarjetas
+    'top': '#fbe6ee',  # barras superior e inferior
+    'panel': '#fcecf1',  # paneles laterales
+    'panel2': '#f6d6e1',  # botones y lista de regiones
+    'hover': '#f0c3d3',  # botón bajo el cursor
+    'line': '#ecc5d3',  # bordes
+    'text': '#4a2c3a',  # texto principal (ciruela)
+    'muted': '#9b7383',  # texto secundario (malva)
+    'accent': '#e36b93',  # rosa cerezo: acción principal y región elegida
+    'accent_hover': '#d4567f',
+    'on_accent': '#ffffff',  # texto sobre el rosa cerezo
+    'region': '#a9718a',  # rectángulo de una región no elegida
+    'warn': '#d9822b',  # aviso: región para revisar
+    'canvas': '#f6dde6',  # fondo detrás de la página
+    'select': '#f3bfd1',  # fila elegida en la lista
 }
-FONT = ('Segoe UI', 10)
-SMALL = ('Segoe UI', 9)
+# Quicksand viene en panelclean/fuentes (licencia OFL) y se carga al iniciar;
+# si no se pudo cargar, Tk usa su fuente por defecto en su lugar.
+FAMILIA = 'Quicksand'
+
+
+def fuente(tam: int = 10, negrita: bool = False) -> tuple:
+    """Fuente de la interfaz en el tamaño pedido."""
+    return (FAMILIA, tam, 'bold' if negrita else 'normal')
+
+
+FONT = fuente(10)
+SMALL = fuente(9)
+
+
+def registrar_fuentes() -> None:
+    """Hace disponible Quicksand sin instalarla en el sistema.
+
+    En Windows se registra solo para este proceso; en Linux se copia a la
+    carpeta de fuentes del usuario si aún no está. Si algo falla, la interfaz
+    sigue funcionando con la fuente por defecto de Tk.
+    """
+    archivos = sorted(FUENTES.glob('*.ttf'))
+    try:
+        if sys.platform == 'win32':
+            import ctypes
+
+            for archivo in archivos:
+                ctypes.windll.gdi32.AddFontResourceExW(str(archivo), 0x10, 0)
+        elif sys.platform.startswith('linux'):
+            destino = Path.home() / '.local' / 'share' / 'fonts' / 'PanelClean'
+            destino.mkdir(parents=True, exist_ok=True)
+            for archivo in archivos:
+                if not (destino / archivo.name).exists():
+                    shutil.copy2(archivo, destino / archivo.name)
+    except (OSError, AttributeError):
+        pass
+
+
+@lru_cache(maxsize=256)
+def _rectangulo_redondeado(
+    ancho: int, alto: int, radio: int, color: str, fondo: str
+) -> Image.Image:
+    """Rectángulo con esquinas redondeadas y bordes suaves (se dibuja al triple y se reduce)."""
+    k = 3
+    grande = Image.new('RGB', (ancho * k, alto * k), fondo)
+    ImageDraw.Draw(grande).rounded_rectangle(
+        (0, 0, ancho * k - 1, alto * k - 1), radius=radio * k, fill=color
+    )
+    return grande.resize((ancho, alto), Image.Resampling.LANCZOS)
+
+
+class BotonRedondeado(tk.Canvas):
+    """Botón con las esquinas redondeadas, que Tk no ofrece.
+
+    El fondo es una imagen hecha con Pillow y el texto lo dibuja el propio
+    lienzo. Admite configure(text=...) para cambiar el texto.
+    """
+
+    def __init__(
+        self,
+        parent,
+        text: str,
+        command,
+        primario: bool = False,
+        alto: int = 34,
+        ancho: int | None = None,
+        tam: int = 10,
+    ):
+        self._fondo = parent.cget('bg')
+        self._fuente = fuente(tam, True)
+        if ancho is None:
+            ancho = tkfont.Font(root=parent, font=self._fuente).measure(text) + 30
+        super().__init__(
+            parent,
+            width=ancho,
+            height=alto,
+            bg=self._fondo,
+            highlightthickness=0,
+            bd=0,
+            cursor='hand2',
+        )
+        self._texto = text
+        self._comando = command
+        if primario:
+            self._colores = (C['accent'], C['accent_hover'], C['on_accent'])
+        else:
+            self._colores = (C['panel2'], C['hover'], C['text'])
+        self._bajo_cursor = False
+        self._imagen = None
+        self.bind('<Configure>', lambda _: self._dibujar())
+        self.bind('<Enter>', lambda _: self._marcar(True))
+        self.bind('<Leave>', lambda _: self._marcar(False))
+        self.bind('<ButtonRelease-1>', self._soltar)
+
+    def _marcar(self, bajo_cursor: bool) -> None:
+        """Cambia el color mientras el cursor está encima."""
+        self._bajo_cursor = bajo_cursor
+        self._dibujar()
+
+    def _soltar(self, event) -> None:
+        """Ejecuta la acción si se suelta el clic dentro del botón."""
+        if 0 <= event.x < self.winfo_width() and 0 <= event.y < self.winfo_height():
+            self._comando()
+
+    def _dibujar(self) -> None:
+        """Dibuja el fondo redondeado y el texto con el tamaño actual."""
+        ancho, alto = self.winfo_width(), self.winfo_height()
+        if ancho < 4 or alto < 4:
+            return
+        normal, encima, color_texto = self._colores
+        color = encima if self._bajo_cursor else normal
+        radio = min(10, alto // 2)
+        self._imagen = ImageTk.PhotoImage(
+            _rectangulo_redondeado(ancho, alto, radio, color, self._fondo), master=self
+        )
+        self.delete('all')
+        self.create_image(0, 0, image=self._imagen, anchor='nw')
+        self.create_text(
+            ancho / 2, alto / 2, text=self._texto, fill=color_texto, font=self._fuente
+        )
+
+    def configure(self, cnf=None, **kw):
+        """Como Canvas.configure, pero además acepta text=..."""
+        if 'text' in kw:
+            self._texto = kw.pop('text')
+            self._dibujar()
+        if cnf or kw:
+            return super().configure(cnf, **kw)
+        return None
+
+    config = configure
 
 
 class Tooltip:
@@ -85,7 +221,7 @@ class Tooltip:
         tk.Label(
             self.popup,
             text=self.content,
-            bg=C['panel2'],
+            bg=C['bg'],
             fg=C['text'],
             font=SMALL,
             justify='left',
@@ -108,13 +244,15 @@ class PanelCleanApp:
     Estado principal:
     - original: página tal como se abrió (nunca se modifica).
     - working: resultado que se muestra a la derecha; se recompone desde original.
-    - regions: rectángulos marcados, cada uno con su máscara.
+    - regions: rectángulos marcados, cada uno con su máscara. Cada región tiene
+      un id interno que nunca se repite (lo usa «Deshacer») y un número visible
+      (R01, R02…) que reutiliza el menor número libre.
     - applied_ids: ids de las regiones cuya limpieza está aplicada en working.
     - undo_stack: pasos anteriores para «Deshacer».
     """
 
     def __init__(self, root: tk.Tk):
-        """Crea el estado vacío, construye la interfaz y carga la página de ejemplo."""
+        """Crea el estado vacío y construye la interfaz; empieza sin ninguna página abierta."""
         self.root = root
         root.title(f'PanelClean  |  {__version__}')
         self._fit_window(1480, 865)
@@ -155,7 +293,7 @@ class PanelCleanApp:
         root.bind('<Delete>', lambda _: self.remove_region())
         root.bind('<Escape>', lambda _: self.change_tool('Seleccionar'))
         root.bind('<Destroy>', self._on_destroy, add='+')
-        root.after_idle(self.load_demo)
+        root.after_idle(self.render_views)
 
     def _on_destroy(self, event):
         """Cancela un redibujo pendiente cuando se cierra la ventana."""
@@ -185,10 +323,23 @@ class PanelCleanApp:
                 pass
 
     def _new_id(self):
-        """Entrega un id de región que nunca se ha usado en esta página."""
+        """Entrega un id interno de región que nunca se ha usado en esta página."""
         new_id = self.next_id
         self.next_id += 1
         return new_id
+
+    def _nuevo_numero(self):
+        """Menor número visible (R01, R02…) que no usa ninguna región actual."""
+        usados = {r.numero for r in self.regions}
+        numero = 1
+        while numero in usados:
+            numero += 1
+        return numero
+
+    @staticmethod
+    def _nombre(region):
+        """Nombre visible de una región: R01, R02…"""
+        return f'R{region.numero:02d}'
 
     def _push_undo(self, working, applied_ids, regions):
         """Guarda un paso para «Deshacer», limitando la memoria usada en páginas grandes."""
@@ -203,90 +354,82 @@ class PanelCleanApp:
             text=text,
             bg=parent.cget('bg'),
             fg=C.get(tone, tone),
-            font=('Segoe UI', size, 'bold' if bold else 'normal'),
+            font=fuente(size, bold),
             **kwargs,
         )
 
-    def _button(self, parent, text, command, kind='normal', help_text=None):
-        """Crea un botón plano que cambia de color bajo el cursor; kind='primary' lo destaca."""
-        is_main = kind == 'primary'
-        bg = C['cyan'] if is_main else C['panel2']
-        fg = C['top'] if is_main else C['text']
-        hover = '#78f2df' if is_main else '#263a52'
-        btn = tk.Button(
-            parent,
-            text=text,
-            command=command,
-            bg=bg,
-            fg=fg,
-            activebackground=hover,
-            activeforeground=fg,
-            highlightthickness=0,
-            bd=0,
-            relief='flat',
-            cursor='hand2',
-            font=('Segoe UI', 10, 'bold' if is_main else 'normal'),
-            padx=12,
-            pady=8,
+    def _button(self, parent, text, command, kind='normal', help_text=None, **kwargs):
+        """Crea un botón redondeado; kind='primary' lo destaca en rosa cerezo."""
+        btn = BotonRedondeado(
+            parent, text, command, primario=kind == 'primary', **kwargs
         )
-        btn.bind('<Enter>', lambda _: btn.configure(bg=hover), add='+')
-        btn.bind('<Leave>', lambda _: btn.configure(bg=bg), add='+')
         if help_text:
             Tooltip(btn, help_text)
         return btn
 
     def _header(self):
         """Construye la barra superior: logo, versión y botones Ejemplo, Abrir imagen y Exportar."""
-        top = tk.Frame(self.root, bg=C['top'], height=72)
+        top = tk.Frame(self.root, bg=C['top'], height=64)
         top.pack(fill='x')
         top.pack_propagate(False)
-        logo = tk.Frame(top, bg=C['cyan'], width=37, height=37)
-        logo.pack(side='left', padx=(20, 11), pady=17)
-        logo.pack_propagate(False)
-        tk.Label(
-            logo, text='P', bg=C['cyan'], fg=C['top'], font=('Segoe UI', 17, 'bold')
-        ).pack(expand=True)
+        logo = tk.Canvas(top, width=38, height=38, bg=C['top'], highlightthickness=0)
+        logo.pack(side='left', padx=(20, 11), pady=13)
+        self._logo = ImageTk.PhotoImage(
+            _rectangulo_redondeado(38, 38, 11, C['accent'], C['top']), master=self.root
+        )
+        logo.create_image(0, 0, image=self._logo, anchor='nw')
+        logo.create_text(19, 19, text='P', fill=C['on_accent'], font=fuente(17, True))
         brand = tk.Frame(top, bg=C['top'])
         brand.pack(side='left')
-        tk.Label(
-            brand,
-            text='PanelClean',
-            bg=C['top'],
-            fg=C['text'],
-            font=('Segoe UI', 17, 'bold'),
-        ).pack(anchor='w')
-        tk.Label(
-            brand,
-            text=f'Editor de globos · {__version__}',
-            bg=C['top'],
-            fg=C['muted'],
-            font=SMALL,
-        ).pack(anchor='w')
+        self._label(brand, 'PanelClean', 17, 'text', True).pack(anchor='w')
+        self._label(brand, f'Editor de globos · {__version__}', 9, 'muted').pack(
+            anchor='w'
+        )
         self._button(
             top,
             'Exportar',
             self.save_image,
             'primary',
             'Guarda la página limpia y, junto a ella, la máscara y un reporte JSON.',
-        ).pack(side='right', padx=(0, 17), pady=14)
+        ).pack(side='right', padx=(0, 18), pady=15)
         self._button(top, 'Abrir imagen', self.open_image).pack(
-            side='right', padx=7, pady=14
+            side='right', padx=6, pady=15
         )
-        self._button(top, 'Ejemplo', self.load_demo).pack(side='right', padx=7, pady=14)
+        self._button(
+            top,
+            'Ejemplo',
+            self.load_demo,
+            help_text='Abre una página de ejemplo para practicar.',
+        ).pack(side='right', padx=6, pady=15)
+
+    def _cabecera_panel(self, panel, titulo, flecha, lado):
+        """Título de un panel lateral con el botón pequeño que lo oculta."""
+        fila = tk.Frame(panel, bg=C['panel'])
+        fila.pack(fill='x', padx=16, pady=(14, 6))
+        self._label(fila, titulo, 11, 'text', True).pack(side='left')
+        self._button(
+            fila,
+            flecha,
+            lambda: self.toggle_panel(lado),
+            help_text='Ocultar este panel.',
+            alto=24,
+            ancho=28,
+        ).pack(side='right')
+        return fila
 
     def _group(self, parent, title, pady=0):
         """Agrega un título de sección al panel y devuelve el contenedor de esa sección."""
-        frame = tk.Frame(parent, bg=C['panel'])
-        frame.pack(fill='x', padx=17, pady=(16, pady))
+        frame = tk.Frame(parent, bg=parent.cget('bg'))
+        frame.pack(fill='x', pady=(10, pady))
         self._label(frame, title, 10, 'text', True).pack(anchor='w')
         return frame
 
     def _scale(self, parent, title, var, lo, hi, callback=None):
         """Crea un control deslizante con su valor visible; callback se llama al moverlo."""
-        line = tk.Frame(parent, bg=C['panel'])
-        line.pack(fill='x', pady=(12, 1))
+        line = tk.Frame(parent, bg=parent.cget('bg'))
+        line.pack(fill='x', pady=(8, 0))
         self._label(line, title, 9, 'muted').pack(side='left')
-        digit = self._label(line, str(var.get()), 9, 'cyan', True)
+        digit = self._label(line, str(var.get()), 9, 'accent', True)
         digit.pack(side='right')
 
         def change(val):
@@ -302,21 +445,23 @@ class PanelCleanApp:
             orient='horizontal',
             variable=var,
             command=change,
-            bg=C['panel'],
+            bg=C['accent'],  # en tk.Scale, bg es el color de la perilla
             fg=C['muted'],
             highlightthickness=0,
             troughcolor=C['panel2'],
-            activebackground=C['cyan'],
+            activebackground=C['accent_hover'],
             bd=0,
             showvalue=False,
-            sliderlength=15,
+            sliderlength=18,
+            sliderrelief='flat',
+            width=10,
         )
-        slider.pack(fill='x', pady=(0, 1))
+        slider.pack(fill='x')
         return slider
 
     def _combo(self, parent, title, variable, choices, callback):
         """Crea una lista desplegable de solo lectura; callback se llama al elegir una opción."""
-        self._label(parent, title, 9, 'muted').pack(anchor='w', pady=(11, 5))
+        self._label(parent, title, 9, 'muted').pack(anchor='w', pady=(8, 4))
         cb = ttk.Combobox(
             parent, values=choices, textvariable=variable, state='readonly', font=FONT
         )
@@ -324,136 +469,79 @@ class PanelCleanApp:
         cb.bind('<<ComboboxSelected>>', lambda _: callback())
         return cb
 
-    def _build_left(self, parent):
-        """Construye el panel izquierdo (con barra de desplazamiento): lista de regiones,
-        herramientas de edición de máscara y ajustes avanzados.
-        """
-        shell = tk.Frame(parent, bg=C['panel'])
-        panel_canvas = tk.Canvas(shell, bg=C['panel'], highlightthickness=0, bd=0)
-        scroll = tk.Scrollbar(
-            shell,
-            orient='vertical',
-            command=panel_canvas.yview,
-            bg=C['panel2'],
-            troughcolor=C['panel'],
-            activebackground=C['line'],
-            width=10,
+    def _opcion(self, parent, text, variable, value=None):
+        """Botón de opción (value dado) o casilla (sin value) con los colores del panel."""
+        comun = dict(
+            text=text,
+            variable=variable,
+            command=self.render_views,
+            bg=parent.cget('bg'),
+            fg=C['text'],
+            selectcolor=C['bg'],
+            activebackground=parent.cget('bg'),
+            activeforeground=C['accent'],
+            font=SMALL,
+            anchor='w',
+            highlightthickness=0,
             bd=0,
             relief='flat',
-            highlightthickness=0,
         )
-        panel_canvas.configure(yscrollcommand=scroll.set)
-        scroll.pack(side='right', fill='y')
-        panel_canvas.pack(side='left', fill='both', expand=True)
-        inner = tk.Frame(panel_canvas, bg=C['panel'])
-        window_id = panel_canvas.create_window((0, 0), window=inner, anchor='nw')
-        inner.bind(
-            '<Configure>',
-            lambda _: panel_canvas.configure(scrollregion=panel_canvas.bbox('all')),
-        )
-        panel_canvas.bind(
-            '<Configure>',
-            lambda e: panel_canvas.itemconfigure(window_id, width=e.width),
-        )
-        self.sidebar_scroll = panel_canvas
-        self.sidebar_inner = inner
+        if value is None:
+            return tk.Checkbutton(parent, **comun)
+        return tk.Radiobutton(parent, value=value, **comun)
 
-        self._group(inner, 'Regiones')
-        self._label(
-            inner,
-            'Selecciona solo el área de las letras.',
-            9,
-            'muted',
-            wraplength=230,
-            justify='left',
-        ).pack(anchor='w', padx=17, pady=(8, 12))
+    def _build_left(self, parent):
+        """Construye el panel izquierdo: regiones, edición de la máscara y ajustes avanzados.
+
+        El panel no se desplaza: los controles quedan fijos y solo la lista de
+        regiones usa el espacio que sobra, con su propia barra si no caben todas.
+        """
+        panel = tk.Frame(parent, bg=C['panel'], width=268)
+        panel.pack_propagate(False)
+        self._cabecera_panel(panel, 'Regiones', '‹', 'left')
         self._button(
-            inner,
+            panel,
             'Detectar globos',
             self.auto_detect,
-            help_text='Búsqueda experimental de contornos. Conviene revisar los candidatos antes de limpiar.',
-        ).pack(fill='x', padx=17, pady=(0, 10))
-        holder = tk.Frame(inner, bg=C['panel2'], height=165)
-        holder.pack(fill='x', padx=17)
-        holder.pack_propagate(False)
-        self.reg_list = tk.Listbox(
-            holder,
-            selectmode=tk.EXTENDED,
-            bg=C['panel2'],
-            fg=C['text'],
-            selectbackground=C['select'],
-            selectforeground=C['cyan'],
-            bd=0,
-            highlightthickness=0,
-            relief='flat',
-            font=('Consolas', 10),
-            activestyle='none',
-            exportselection=False,
-        )
-        self.reg_list.pack(fill='both', expand=True, padx=7, pady=7)
-        self.reg_list.bind('<<ListboxSelect>>', self.on_list_selection)
-        row = tk.Frame(inner, bg=C['panel'])
-        row.pack(fill='x', padx=17, pady=(8, 5))
+            help_text='Búsqueda experimental de globos. Revisa los candidatos antes de limpiar.',
+        ).pack(fill='x', padx=16, pady=(0, 10))
+
+        # Controles de abajo: se empaquetan antes que la lista para que ella sea
+        # la que se achique si falta espacio (por ejemplo, con los ajustes abiertos).
+        abajo = tk.Frame(panel, bg=C['panel'])
+        abajo.pack(side='bottom', fill='x', padx=16, pady=(0, 14))
+        fila = tk.Frame(abajo, bg=C['panel'])
+        fila.pack(fill='x', pady=(8, 0))
         self._button(
-            row,
+            fila,
             'Quitar',
             self.remove_region,
-            help_text='Elimina las regiones seleccionadas y quita su limpieza del resultado. Se puede deshacer.',
-        ).pack(side='left', fill='x', expand=True, padx=(0, 5))
+            help_text='Quita la región elegida y su limpieza. Se puede deshacer.',
+        ).pack(side='left', fill='x', expand=True, padx=(0, 4))
         self._button(
-            row,
+            fila,
+            'Quitar todo',
+            self.remove_all,
+            help_text='Quita todas las regiones y sus limpiezas. Se puede deshacer.',
+        ).pack(side='left', fill='x', expand=True, padx=(4, 0))
+        self._button(
+            abajo,
             'Crear máscaras',
             self.make_selected_mask,
-            help_text='Detecta candidatos de texto para todas las regiones seleccionadas.',
-        ).pack(side='left', fill='x', expand=True)
-        hint = self._label(inner, 'Ctrl / Shift + clic para elegir varias.', 9, 'muted')
-        hint.pack(anchor='w', padx=17, pady=(3, 12))
-        self._group(inner, 'Edición')
-        tools = tk.Frame(inner, bg=C['panel'])
-        tools.pack(fill='x', padx=17, pady=(8, 5))
+            help_text='Detecta las letras de las regiones elegidas en la lista.',
+        ).pack(fill='x', pady=(8, 0))
+        self._group(abajo, 'Edición')
         for name, label in [
             ('Seleccionar', 'Seleccionar'),
             ('Pintar', 'Añadir máscara'),
             ('Borrar', 'Borrar máscara'),
         ]:
-            rb = tk.Radiobutton(
-                tools,
-                text=label,
-                variable=self.tool,
-                value=name,
-                command=self.render_views,
-                bg=C['panel'],
-                fg=C['text'],
-                selectcolor=C['panel2'],
-                activebackground=C['panel'],
-                activeforeground=C['cyan'],
-                font=SMALL,
-                anchor='w',
-                highlightthickness=0,
-                bd=0,
-                relief='flat',
-            )
-            rb.pack(fill='x', pady=3)
-        tk.Checkbutton(
-            inner,
-            text='Ver máscara',
-            variable=self.show_masks,
-            command=self.render_views,
-            bg=C['panel'],
-            fg=C['muted'],
-            selectcolor=C['panel2'],
-            activebackground=C['panel'],
-            activeforeground=C['cyan'],
-            font=SMALL,
-            highlightthickness=0,
-            bd=0,
-            relief='flat',
-        ).pack(anchor='w', padx=17, pady=(8, 9))
-
-        adv_btn = self._button(inner, 'Ajustes avanzados  ▾', self.toggle_advanced)
-        adv_btn.pack(fill='x', padx=17, pady=(8, 8))
+            self._opcion(abajo, label, self.tool, name).pack(fill='x', pady=(2, 0))
+        self._opcion(abajo, 'Ver máscara', self.show_masks).pack(fill='x', pady=(4, 6))
+        adv_btn = self._button(abajo, 'Ajustes avanzados  ▾', self.toggle_advanced)
+        adv_btn.pack(fill='x')
         self.advanced_button = adv_btn
-        advanced = tk.Frame(inner, bg=C['panel'])
+        advanced = tk.Frame(abajo, bg=C['panel'])
         self.advanced_frame = advanced
         self._combo(
             advanced,
@@ -474,15 +562,39 @@ class PanelCleanApp:
             self.on_options_changed,
         )
         self._scale(advanced, 'Tamaño del pincel', self.brush, 2, 20)
-        self._label(
-            inner,
-            'Pasa el cursor por los botones para ver ayuda.',
-            9,
-            'muted',
-            wraplength=245,
-            justify='left',
-        ).pack(anchor='w', padx=17, pady=(12, 18))
-        return shell
+
+        caja = tk.Frame(panel, bg=C['bg'])
+        caja.pack(fill='both', expand=True, padx=16)
+        self.reg_list = tk.Listbox(
+            caja,
+            height=3,
+            selectmode=tk.EXTENDED,
+            bg=C['bg'],
+            fg=C['text'],
+            selectbackground=C['select'],
+            selectforeground=C['text'],
+            bd=0,
+            highlightthickness=0,
+            relief='flat',
+            font=FONT,
+            activestyle='none',
+            exportselection=False,
+        )
+        barra = ttk.Scrollbar(caja, orient='vertical', command=self.reg_list.yview)
+
+        def mover_barra(primero, ultimo):
+            """Muestra la barra de la lista solo cuando hay más regiones de las que caben."""
+            barra.set(primero, ultimo)
+            if float(primero) <= 0.0 and float(ultimo) >= 1.0:
+                barra.pack_forget()
+            elif not barra.winfo_ismapped():
+                barra.pack(side='right', fill='y', before=self.reg_list)
+
+        self.reg_list.configure(yscrollcommand=mover_barra)
+        self.reg_list.pack(side='left', fill='both', expand=True, padx=8, pady=8)
+        self.reg_list.bind('<<ListboxSelect>>', self.on_list_selection)
+        Tooltip(self.reg_list, 'Ctrl o Shift + clic para elegir varias regiones.')
+        return panel
 
     def toggle_advanced(self):
         """Muestra u oculta los ajustes avanzados de la máscara."""
@@ -490,60 +602,61 @@ class PanelCleanApp:
             self.advanced_frame.pack_forget()
             self.advanced_button.configure(text='Ajustes avanzados  ▾')
         else:
-            # Justo debajo del botón, no al final del panel.
-            self.advanced_frame.pack(fill='x', padx=17, after=self.advanced_button)
+            # Justo debajo del botón; la lista de regiones cede el espacio.
+            self.advanced_frame.pack(fill='x', after=self.advanced_button)
             self.advanced_button.configure(text='Ajustes avanzados  ▴')
         self._advanced_open = not self._advanced_open
 
     def _build_right(self, parent):
         """Construye el panel derecho: datos de la región, método de limpieza, botones y estado."""
-        inspector = tk.Frame(parent, bg=C['panel'])
-        self._group(inspector, 'Selección')
-        card = tk.Frame(inspector, bg=C['panel2'])
-        card.pack(fill='x', padx=16, pady=(12, 5))
-        self.info_name = self._label(card, 'Sin región', 12, 'cyan', True)
-        self.info_name.pack(anchor='w', padx=11, pady=(13, 5))
+        inspector = tk.Frame(parent, bg=C['panel'], width=262)
+        inspector.pack_propagate(False)
+        self._cabecera_panel(inspector, 'Selección', '›', 'right')
+        cuerpo = tk.Frame(inspector, bg=C['panel'])
+        cuerpo.pack(fill='both', expand=True, padx=16)
+        card = tk.Frame(cuerpo, bg=C['bg'])
+        card.pack(fill='x', pady=(2, 0))
+        self.info_name = self._label(card, 'Sin región', 12, 'accent', True)
+        self.info_name.pack(anchor='w', padx=12, pady=(12, 5))
         self.info_entropy = self._label(card, 'Entropía  —', 9, 'muted')
-        self.info_entropy.pack(anchor='w', padx=11, pady=3)
+        self.info_entropy.pack(anchor='w', padx=12, pady=2)
         self.info_dark = self._label(card, 'Tono oscuro  —', 9, 'muted')
-        self.info_dark.pack(anchor='w', padx=11, pady=3)
+        self.info_dark.pack(anchor='w', padx=12, pady=2)
         self.info_pixels = self._label(card, 'Máscara  —', 9, 'muted')
-        self.info_pixels.pack(anchor='w', padx=11, pady=(3, 12))
-        self._group(inspector, 'Limpieza')
-        settings = tk.Frame(inspector, bg=C['panel'])
-        settings.pack(fill='x', padx=17, pady=(4, 3))
+        self.info_pixels.pack(anchor='w', padx=12, pady=(2, 12))
+        self._group(cuerpo, 'Limpieza')
         self._combo(
-            settings,
+            cuerpo,
             'Método',
             self.method,
             ['Automático', 'Relleno local', 'Inpainting Telea', 'Inpainting NS'],
             self.method_changed,
         )
-        self._scale(settings, 'Radio de inpainting', self.radius, 1, 8)
+        self._scale(cuerpo, 'Radio de inpainting', self.radius, 1, 8)
         self._button(
-            inspector,
+            cuerpo,
             'Limpiar selección',
             self.clean_selected,
             'primary',
-            help_text='Limpia todas las regiones marcadas en la lista y conserva las limpiezas anteriores.',
-        ).pack(fill='x', padx=17, pady=(11, 8))
+            help_text='Limpia las regiones elegidas en la lista y conserva las limpiezas anteriores.',
+        ).pack(fill='x', pady=(12, 8))
         self._button(
-            inspector,
+            cuerpo,
             'Limpiar todas',
             self.clean_all,
-            help_text='Intenta procesar todas las regiones; las dudosas quedan intactas para revisión.',
-        ).pack(fill='x', padx=17, pady=(0, 8))
-        self._button(inspector, 'Deshacer', self.undo).pack(fill='x', padx=17)
-        self._group(inspector, 'Estado')
+            help_text='Intenta limpiar todas las regiones; las dudosas quedan intactas para revisión.',
+        ).pack(fill='x', pady=(0, 8))
+        self._button(cuerpo, 'Deshacer', self.undo).pack(fill='x')
+        self._group(cuerpo, 'Estado')
         self.status_text = self._label(
-            inspector,
-            'Lista para comenzar.',
+            cuerpo,
+            'Abre una página para comenzar.',
             9,
             'muted',
-            wraplength=240,
+            wraplength=226,
             justify='left',
         )
-        self.status_text.pack(anchor='w', padx=17, pady=(8, 12))
+        self.status_text.pack(anchor='w', pady=(6, 12))
         return inspector
 
     def _build_center(self, parent):
@@ -552,8 +665,8 @@ class PanelCleanApp:
         """
         center = tk.Frame(parent, bg=C['bg'])
         nav = tk.Frame(center, bg=C['bg'])
-        nav.pack(fill='x', padx=4, pady=(2, 10))
-        self._label(nav, 'Editor', 17, 'text', True).pack(side='left')
+        nav.pack(fill='x', padx=4, pady=(0, 8))
+        self._label(nav, 'Editor', 16, 'text', True).pack(side='left')
         self._button(nav, 'Ajustar vista', self.reset_view).pack(side='right')
         self._label(nav, 'Rueda: zoom  ·  clic derecho: mover', 9, 'muted').pack(
             side='right', padx=(0, 13)
@@ -575,8 +688,8 @@ class PanelCleanApp:
                 padx=(0, 5) if key == 'left' else (5, 0),
             )
             bar = tk.Frame(shell, bg=C['panel'])
-            bar.pack(fill='x', padx=13, pady=(12, 11))
-            self._label(bar, title, 9, 'cyan', True).pack(side='left')
+            bar.pack(fill='x', padx=13, pady=(10, 9))
+            self._label(bar, title, 9, 'accent', True).pack(side='left')
             if key == 'left':
                 self._label(bar, 'Selecciona texto, no el contorno', 9, 'muted').pack(
                     side='right'
@@ -600,56 +713,68 @@ class PanelCleanApp:
                 cv.bind('<B1-Motion>', self.left_move)
                 cv.bind('<ButtonRelease-1>', self.left_up)
             self.view_canvases[key] = cv
+        # Botón que aparece en la vista ORIGINAL mientras no hay ninguna página abierta.
+        self.add_button = self._button(
+            self.view_canvases['left'],
+            'Agregar imagen',
+            self.open_image,
+            'primary',
+            alto=42,
+            tam=11,
+        )
         return center
 
+    def _tira(self, parent, flecha, lado):
+        """Franja angosta con el botón que vuelve a mostrar un panel oculto."""
+        tira = tk.Frame(parent, bg=C['panel'], width=34)
+        self._button(
+            tira,
+            flecha,
+            lambda: self.toggle_panel(lado),
+            help_text='Mostrar el panel.',
+            alto=24,
+            ancho=26,
+        ).pack(pady=14, padx=4)
+        return tira
+
+    def toggle_panel(self, lado):
+        """Oculta o vuelve a mostrar un panel lateral ('left' o 'right')."""
+        panel, tira = self._paneles[lado]
+        columna = 0 if lado == 'left' else 2
+        margen = (0, 10) if lado == 'left' else (10, 0)
+        if panel.winfo_manager():
+            panel.grid_remove()
+            tira.grid(row=0, column=columna, sticky='ns', padx=margen)
+        else:
+            tira.grid_remove()
+            panel.grid(row=0, column=columna, sticky='ns', padx=margen)
+        self._schedule_render()
+
     def _build(self):
-        """Arma la ventana completa: cabecera, tres paneles redimensionables y pie de página."""
+        """Arma la ventana completa: cabecera, paneles laterales fijos, vistas y pie de página."""
         self._header()
-        body = tk.PanedWindow(
-            self.root,
-            orient='horizontal',
-            bg=C['bg'],
-            bd=0,
-            sashwidth=7,
-            sashpad=0,
-            opaqueresize=True,
-            sashrelief='flat',
-            showhandle=False,
-        )
-        body.pack(fill='both', expand=True, padx=10, pady=11)
-        self.panes = body
+        body = tk.Frame(self.root, bg=C['bg'])
+        body.pack(fill='both', expand=True, padx=10, pady=10)
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
         self.left_panel = self._build_left(body)
         self.center_panel = self._build_center(body)
         self.right_panel = self._build_right(body)
-        body.add(self.left_panel, minsize=215, width=272)
-        body.add(self.center_panel, minsize=495, stretch='always')
-        body.add(self.right_panel, minsize=215, width=263)
+        self.left_panel.grid(row=0, column=0, sticky='ns', padx=(0, 10))
+        self.center_panel.grid(row=0, column=1, sticky='nsew')
+        self.right_panel.grid(row=0, column=2, sticky='ns', padx=(10, 0))
+        self._paneles = {
+            'left': (self.left_panel, self._tira(body, '›', 'left')),
+            'right': (self.right_panel, self._tira(body, '‹', 'right')),
+        }
         footer = tk.Frame(self.root, bg=C['top'], height=30)
-        footer.pack(fill='x')
+        footer.pack(fill='x', side='bottom', before=body)
         footer.pack_propagate(False)
-        self.message = self._label(
-            footer, 'Selecciona las letras y crea una máscara.', 9, 'muted'
-        )
+        self.message = self._label(footer, 'Abre una página para comenzar.', 9, 'muted')
         self.message.pack(side='left', padx=16, pady=6)
         self._label(footer, 'PanelClean  ·  TEL-328', 9, 'muted').pack(
             side='right', padx=17
         )
-        self.root.bind_all('<MouseWheel>', self.sidebar_wheel, add='+')
-        self.root.bind_all('<Button-4>', self.sidebar_wheel, add='+')
-        self.root.bind_all('<Button-5>', self.sidebar_wheel, add='+')
-
-    def sidebar_wheel(self, event):
-        """Desplaza el panel izquierdo con la rueda cuando el cursor está sobre él."""
-        widget = event.widget
-        while widget is not None:
-            if widget is self.sidebar_scroll or widget is self.sidebar_inner:
-                if hasattr(event, 'num') and event.num in (4, 5):
-                    direction = -1 if event.num == 4 else 1
-                else:
-                    direction = -1 if event.delta > 0 else 1
-                self.sidebar_scroll.yview_scroll(direction * 3, 'units')
-                return 'break'
-            widget = getattr(widget, 'master', None)
 
     def _options(self, method=None):
         """Reúne los ajustes actuales de la interfaz; method, si se entrega, reemplaza al método elegido."""
@@ -731,6 +856,7 @@ class PanelCleanApp:
             if any(self._rect_overlap(candidate, r) > 0.5 for r in self.regions):
                 continue
             candidate.id = self._new_id()
+            candidate.numero = self._nuevo_numero()
             self.regions.append(candidate)
             new.append(len(self.regions) - 1)
         self.selected_indices = old_selection | set(new)
@@ -766,7 +892,9 @@ class PanelCleanApp:
                 if reg.id in self.applied_ids
                 else ('•' if reg.mask is not None else ' ')
             )
-            self.reg_list.insert('end', f' {state}  R{reg.id:02d}   {reg.w}×{reg.h}')
+            self.reg_list.insert(
+                'end', f' {state}  {self._nombre(reg)}   {reg.w}×{reg.h}'
+            )
         self.selected_indices = {
             i for i in self.selected_indices if i < len(self.regions)
         }
@@ -811,8 +939,8 @@ class PanelCleanApp:
         if r.mask is not None:
             describe_background(self.original, r)
         self.info_name.configure(
-            text=f'R{r.id:02d}  ·  {r.classification}',
-            fg=C['cyan'] if not r.review_reason else C['orange'],
+            text=f'{self._nombre(r)}  ·  {r.classification}',
+            fg=C['accent'] if not r.review_reason else C['warn'],
         )
         self.info_entropy.configure(
             text=f'Entropía  {r.entropy:.1f} bits  ·  textura {r.texture:.0%}'
@@ -870,24 +998,36 @@ class PanelCleanApp:
         )
 
     def remove_region(self):
-        """Elimina las regiones seleccionadas y recompone el resultado sin ellas. Se puede deshacer."""
-        if not self.selected_indices:
+        """Quita la región elegida (la que describe el panel derecho) y su limpieza. Se puede deshacer."""
+        region = self.current_region()
+        if region is None:
             return
-        selected = self.selected_regions()
+        self._quitar([region])
+        self._set_status(
+            f'{self._nombre(region)} quitada. Se actualizó el resultado; puedes deshacerlo.'
+        )
+
+    def remove_all(self):
+        """Quita todas las regiones y sus limpiezas. Se puede deshacer."""
+        if not self.regions:
+            return
+        cantidad = len(self.regions)
+        self._quitar(list(self.regions))
+        self._set_status(
+            f'Se quitaron las {cantidad} regiones. Se actualizó el resultado; puedes deshacerlo.'
+        )
+
+    def _quitar(self, regiones):
+        """Quita las regiones dadas, guarda un paso de «Deshacer» y recompone el resultado."""
         self._push_undo(self.working.copy(), self.applied_ids, self.regions)
-        for r in selected:
+        for r in regiones:
             self.applied_ids.discard(r.id)
-        self.regions = [
-            r for i, r in enumerate(self.regions) if i not in self.selected_indices
-        ]
+        self.regions = [r for r in self.regions if all(r is not q for q in regiones)]
         self.selected_indices = set()
         self.focus_index = None
         self._rebuild_without_snapshot()
         self.refresh_regions()
         self.render_views()
-        self._set_status(
-            f'{len(selected)} región(es) eliminada(s). Se actualizó el resultado; puedes deshacerlo.'
-        )
 
     def change_tool(self, name):
         """Cambia la herramienta activa: Seleccionar, Pintar o Borrar."""
@@ -934,7 +1074,7 @@ class PanelCleanApp:
                 oy + y * scale,
                 ox + point[0] * scale,
                 oy + point[1] * scale,
-                outline=C['orange'],
+                outline=C['accent'],
                 width=2,
                 dash=(5, 3),
                 tags='rubber',
@@ -996,6 +1136,7 @@ class PanelCleanApp:
         """
         r = bounded_region(self.original, xyxy)
         r.id = self._new_id()
+        r.numero = self._nuevo_numero()
         self.regions.append(r)
         index = len(self.regions) - 1
         self.selected_indices.add(index)
@@ -1004,7 +1145,7 @@ class PanelCleanApp:
         self.refresh_regions()
         self.render_views()
         self._set_status(
-            f'R{r.id:02d} añadida. Se mantienen {len(self.selected_indices)} selecciones; crea las máscaras.'
+            f'{self._nombre(r)} añadida. Se mantienen {len(self.selected_indices)} selecciones; crea las máscaras.'
         )
         return r
 
@@ -1118,7 +1259,7 @@ class PanelCleanApp:
                     or not cv2.countNonZero(r.mask)
                 ):
                     self.applied_ids.discard(r.id)
-                    skipped.append(f'R{r.id:02d}')
+                    skipped.append(self._nombre(r))
                 else:
                     if (
                         opts.method != 'Automático'
@@ -1126,12 +1267,12 @@ class PanelCleanApp:
                     ):
                         confirmed = messagebox.askyesno(
                             'Confirmar limpieza',
-                            f'R{r.id:02d}: {r.review_reason}\n\n'
+                            f'{self._nombre(r)}: {r.review_reason}\n\n'
                             '¿Deseas aplicar el método elegido de todas formas?',
                         )
                         if not confirmed:
                             self.applied_ids.discard(r.id)
-                            skipped.append(f'R{r.id:02d}')
+                            skipped.append(self._nombre(r))
                             continue
                     self.applied_ids.add(r.id)
                     r.applied_radius = opts.radius
@@ -1141,8 +1282,8 @@ class PanelCleanApp:
                 if r.id in self.applied_ids:
                     applied += 1
                     methods.append(r.last_method)
-                elif f'R{r.id:02d}' not in skipped:
-                    skipped.append(f'R{r.id:02d}')
+                elif self._nombre(r) not in skipped:
+                    skipped.append(self._nombre(r))
             if (
                 not np.array_equal(before, self.working)
                 or self.applied_ids != before_ids
@@ -1199,7 +1340,7 @@ class PanelCleanApp:
                 'origen': Path(self.source_path).name,
                 'regiones': [
                     {
-                        'id': r.id,
+                        'region': self._nombre(r),
                         'rect': r.rect,
                         'procesada': r.id in self.applied_ids,
                         'clase': r.classification,
@@ -1273,8 +1414,10 @@ class PanelCleanApp:
 
         Guarda en _mapping la escala y el desplazamiento de cada vista, que
         _to_image_xy usa para convertir clics a coordenadas de la imagen.
+        Sin ninguna página abierta, muestra el botón «Agregar imagen».
         """
         if self.original is None:
+            self._render_sin_imagen()
             return
         for key, image in [('left', self.original), ('right', self.working)]:
             if image is None:
@@ -1311,7 +1454,7 @@ class PanelCleanApp:
             if key == 'left':
                 for i, r in enumerate(self.regions):
                     selected = i in self.selected_indices
-                    color = C['cyan'] if selected else C['orange']
+                    color = C['accent'] if selected else C['region']
                     lx, ty = ox + r.x * scale, oy + r.y * scale
                     rx, by = lx + r.w * scale, ty + r.h * scale
                     canvas.create_rectangle(
@@ -1323,14 +1466,45 @@ class PanelCleanApp:
                     canvas.create_text(
                         lx + 19,
                         ty - 10,
-                        text=f'R{r.id:02d}',
-                        fill=C['top'],
-                        font=('Segoe UI', 9, 'bold'),
+                        text=self._nombre(r),
+                        fill=C['on_accent'],
+                        font=fuente(9, True),
                     )
+
+    def _render_sin_imagen(self):
+        """Pantalla inicial: invitación a abrir una página y el botón «Agregar imagen»."""
+        for key, canvas in self.view_canvases.items():
+            canvas.delete('all')
+            w, h = canvas.winfo_width(), canvas.winfo_height()
+            if key == 'right':
+                canvas.create_text(
+                    w / 2,
+                    h / 2,
+                    text='Aquí verás la página limpia',
+                    fill=C['muted'],
+                    font=fuente(10),
+                )
+                continue
+            canvas.create_text(
+                w / 2,
+                h / 2 - 52,
+                text='Abre una página de manga para empezar',
+                fill=C['text'],
+                font=fuente(12, True),
+            )
+            canvas.create_window(w / 2, h / 2, window=self.add_button)
+            canvas.create_text(
+                w / 2,
+                h / 2 + 48,
+                text='o pulsa «Ejemplo» arriba para practicar',
+                fill=C['muted'],
+                font=fuente(9),
+            )
 
 
 def main():
-    """Crea la ventana de Tk, aplica el tema de los controles y abre PanelClean."""
+    """Carga la fuente, crea la ventana de Tk con el tema de los controles y abre PanelClean."""
+    registrar_fuentes()
     root = tk.Tk()
     try:
         root.tk.call('tk', 'scaling', 1.12)
@@ -1343,27 +1517,35 @@ def main():
         pass
     style.configure(
         'TCombobox',
-        fieldbackground=C['panel2'],
+        fieldbackground=C['bg'],
         background=C['panel2'],
         foreground=C['text'],
-        arrowcolor=C['cyan'],
-        padding=7,
+        arrowcolor=C['accent'],
+        bordercolor=C['line'],
+        lightcolor=C['bg'],
+        darkcolor=C['bg'],
+        padding=6,
     )
     style.map(
         'TCombobox',
-        fieldbackground=[('readonly', C['panel2'])],
-        selectbackground=[('readonly', C['panel2'])],
+        fieldbackground=[('readonly', C['bg'])],
+        selectbackground=[('readonly', C['bg'])],
         selectforeground=[('readonly', C['text'])],
     )
     style.configure(
         'Vertical.TScrollbar',
         background=C['panel2'],
-        troughcolor=C['panel'],
+        troughcolor=C['bg'],
         arrowcolor=C['muted'],
-        bordercolor=C['panel'],
+        bordercolor=C['bg'],
+        lightcolor=C['panel2'],
+        darkcolor=C['panel2'],
     )
-    root.option_add('*TCombobox*Listbox.background', C['panel2'])
+    root.option_add('*TCombobox*Listbox.background', C['bg'])
     root.option_add('*TCombobox*Listbox.foreground', C['text'])
+    root.option_add('*TCombobox*Listbox.selectBackground', C['select'])
+    root.option_add('*TCombobox*Listbox.selectForeground', C['text'])
+    root.option_add('*TCombobox*Listbox.font', FONT)
     PanelCleanApp(root)
     root.mainloop()
 

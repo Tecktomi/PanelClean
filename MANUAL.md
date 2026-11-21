@@ -41,7 +41,7 @@ Todo lo que instala PanelClean queda dentro de su propia carpeta (en `.venv`). N
 3. **Haz doble clic en `INICIAR_WINDOWS.bat`**. La primera vez se abre una consola que prepara el entorno e instala las bibliotecas; tarda unos minutos. Si la instalación se corta (por ejemplo, por la conexión), basta con volver a abrir el archivo: retoma sola.
 4. Las veces siguientes, el mismo doble clic abre la aplicación directamente.
 
-Si ves esta ventana con la página de ejemplo, PanelClean quedó instalado:
+Si ves esta ventana, PanelClean quedó instalado. Empieza sin ninguna página abierta: pulsa **Agregar imagen** para abrir una, o **Ejemplo** para practicar.
 
 ![PanelClean recién abierto, con la página de ejemplo](docs/manual/ventana_inicial.png)
 
@@ -74,7 +74,7 @@ El lanzador avisa si falta algo y dice cómo instalarlo. Nota: el lanzador de Li
 | # | Parte | Para qué sirve |
 |---|---|---|
 | 1 | Barra superior | **Ejemplo** abre la página incluida para practicar; **Abrir imagen** abre una página tuya; **Exportar** guarda el resultado |
-| 2 | Regiones | Lista de los rectángulos marcados. ✓ = ya limpiada · • = tiene máscara. **Quitar** borra las regiones elegidas y **Crear máscaras** las analiza |
+| 2 | Regiones | Lista de los rectángulos marcados (✓ = ya limpiada · • = tiene máscara); si no caben, la lista se desplaza. **Quitar** borra la región elegida, **Quitar todo** las borra todas y **Crear máscaras** analiza las elegidas |
 | 3 | Edición | Herramienta activa: **Seleccionar** (marcar regiones), **Añadir máscara** y **Borrar máscara** (pincel). **Ver máscara** muestra u oculta el rosa |
 | 4 | Ajustes avanzados | Afinan cómo se crea la máscara y el tamaño del pincel (sección 7) |
 | 5 | Vista ORIGINAL | La página sin cambios. Aquí se marcan las letras y se ve la máscara en rosa |
@@ -84,7 +84,7 @@ El lanzador avisa si falta algo y dice cómo instalarlo. Nota: el lanzador de Li
 | 9 | Limpieza | **Método**, **Radio de inpainting** y los botones **Limpiar selección**, **Limpiar todas** y **Deshacer** |
 | 10 | Estado | Qué acaba de pasar y qué conviene hacer después. Se repite en la barra inferior |
 
-Pasa el cursor sobre un botón para ver una ayuda breve.
+Pasa el cursor sobre un botón para ver una ayuda breve. Los botones pequeños **‹** y **›** junto a «Regiones» y «Selección» ocultan los paneles laterales para ver la página más grande; la franja que queda en su lugar los vuelve a mostrar.
 
 ## 4. Limpiar una página paso a paso
 
@@ -92,16 +92,16 @@ Para practicar, usa **Ejemplo**: la página tiene un globo blanco, uno sobre una
 
 ### Paso 1 · Abrir la página
 
-Pulsa **Abrir imagen** (o `Ctrl + O`) y elige el archivo. Acepta PNG, JPG, BMP y WebP. Si la imagen mide más de 3500 px de lado, PanelClean pregunta antes de abrirla, porque procesarla toma más tiempo.
+Pulsa **Agregar imagen** (en el centro, mientras no hay ninguna página abierta) o **Abrir imagen** (`Ctrl + O`) y elige el archivo. Acepta PNG, JPG, BMP y WebP. Si la imagen mide más de 3500 px de lado, PanelClean pregunta antes de abrirla, porque procesarla toma más tiempo.
 
 ### Paso 2 · Marcar las letras
 
-Con la herramienta **Seleccionar**, arrastra en la vista ORIGINAL un rectángulo **ajustado a las letras**, sin incluir el contorno del globo. Cada rectángulo es una región (R01, R02…). Puedes marcar varias.
+Con la herramienta **Seleccionar**, arrastra en la vista ORIGINAL un rectángulo **ajustado a las letras**, sin incluir el contorno del globo. Cada rectángulo es una región (R01, R02…); si quitas una, su número queda libre para la siguiente. Puedes marcar varias.
 
 ![Tres regiones marcadas sobre la página de ejemplo](docs/manual/regiones.png)
 
 - Un clic sobre una región la elige; `Ctrl + clic` la suma o la quita de la selección. En la lista, `Ctrl` o `Shift + clic` eligen varias.
-- Las regiones elegidas se ven en celeste; las demás, en naranja.
+- Las regiones elegidas se ven en rosa cerezo; las demás, en malva.
 - Un rectángulo más chico que 12 × 12 px no se acepta.
 - Si un globo tiene texto en dos zonas separadas, marca dos regiones: cuanto menos dibujo quede dentro, mejor sale la máscara.
 
@@ -140,7 +140,7 @@ La barra de estado dice cuántas se limpiaron, con qué método y cuáles quedar
 ### Paso 6 · Comparar, deshacer y quitar
 
 - **Deshacer** (`Ctrl + Z`) vuelve atrás la última limpieza o la última región quitada, hasta 15 pasos (menos en páginas muy grandes, para no llenar la memoria).
-- **Quitar** (`Supr`) borra las regiones elegidas y también su limpieza del resultado.
+- **Quitar** (`Supr`) borra la región elegida y también su limpieza del resultado; **Quitar todo** borra todas las regiones. Ambos se pueden deshacer.
 - Puedes volver a limpiar una región con otro método: el resultado se recalcula siempre desde la página original, así que las limpiezas no se acumulan ni se degradan.
 
 ### Paso 7 · Exportar
@@ -217,7 +217,7 @@ Se abren con **Ajustes avanzados** en el panel izquierdo. Después de cambiar un
 | Abrir imagen | `Ctrl + O` |
 | Exportar | `Ctrl + S` |
 | Deshacer | `Ctrl + Z` |
-| Quitar regiones elegidas | `Supr` |
+| Quitar la región elegida | `Supr` |
 | Volver a la herramienta Seleccionar | `Esc` |
 | Zoom | Rueda del ratón sobre una vista |
 | Mover la vista | Clic derecho y arrastrar |
@@ -248,7 +248,7 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 | Una región no se limpia | Está en «Complejo / revisar» o «Revisar máscara», o su máscara quedó vacía. Revisa el rosa, corrígelo o elige un método a mano |
 | Al arrastrar no se crea un rectángulo | La herramienta activa es un pincel. Pulsa `Esc` o elige **Seleccionar** |
 | El pincel no hace nada | Hay que elegir antes una región (un clic sobre ella) y pintar dentro de su rectángulo |
-| La ventana no cabe en la pantalla | En pantallas chicas PanelClean se abre maximizada; los paneles laterales se pueden angostar arrastrando su borde |
+| La ventana no cabe en la pantalla | En pantallas chicas PanelClean se abre maximizada; los paneles laterales se pueden ocultar con sus botones **‹** y **›** |
 | Va lento | Pasa con páginas muy grandes. Una página de 2048 px se procesa en menos de 2 s en un portátil común |
 
 ## 11. Créditos
@@ -256,4 +256,5 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 - **Equipo:** Jesús Ignacio Bustamante Llanquitrue, Patricio Marcelo Guzmán Aranda, Sofia Victoria Nicolao Madrid y Tomás Ramdohr Arellano.
 - **Páginas reales de este manual:** obras «tencho_isoro» y «tojime_no_siora» del **OpenMantra dataset** (R. Hinami, S. Ishiwatari, K. Yasuda y Y. Matsui, AAAI 2021), licencia CC BY-NC 4.0. Créditos completos en [`datasets/README.md`](datasets/README.md).
 - **Página de ejemplo** (`examples/demo_pagina.png`): sintética, hecha por el equipo.
+- **Fuente de la interfaz:** Quicksand, de The Quicksand Project Authors ([github.com/andrew-paglinawan/QuicksandFamily](https://github.com/andrew-paglinawan/QuicksandFamily)), licencia SIL Open Font License 1.1 (incluida en `panelclean/fuentes/OFL.txt`).
 - Bibliotecas: OpenCV, NumPy, Pillow y Tkinter.

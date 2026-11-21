@@ -32,7 +32,7 @@ En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
 El [manual](MANUAL.md) explica cada control, cómo corregir la máscara y qué hacer si algo falla. En resumen:
 
-1. `Abrir imagen` para cargar una página o `Ejemplo` para usar la imagen incluida.
+1. `Agregar imagen` (o `Abrir imagen`) para cargar una página, o `Ejemplo` para practicar con la imagen incluida.
 2. En la vista Original, arrastra un rectángulo ajustado alrededor de las letras que quieres limpiar.
 3. Puedes seleccionar varias regiones.
 4. Pulsa `Crear máscaras` y revisa la zona marcada en rosa.
@@ -93,3 +93,4 @@ Los resultados quedan en `evaluacion/resultados/resumen.md`. Para etiquetar el f
 - `datasets/open-mantra/`: **OpenMantra dataset**, de R. Hinami, S. Ishiwatari, K. Yasuda y Y. Matsui («Towards Fully Automated Manga Translation», AAAI 2021), descargado de <https://github.com/mantra-inc/open-mantra-dataset>. Son 214 páginas de cinco mangas japoneses con 1592 bloques de texto anotados, bajo licencia **CC BY-NC 4.0** (uso no comercial). No es obra del equipo; se incluye sin modificar para entrenar y evaluar la detección de texto. Los detalles, la licencia y la cita están en [`datasets/README.md`](datasets/README.md).
 - `evaluacion/fuentes/NotoSansJP-Bold.otf`: fuente **Noto Sans JP** de Google ([github.com/notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)), bajo licencia **SIL Open Font License 1.1** (incluida en `evaluacion/fuentes/OFL.txt`). Se usa para escribir el texto japonés de los pares sintéticos.
 - Las capturas de páginas reales del manual también son de OpenMantra.
+- `panelclean/fuentes/`: fuente **Quicksand** de la interfaz, de The Quicksand Project Authors ([github.com/andrew-paglinawan/QuicksandFamily](https://github.com/andrew-paglinawan/QuicksandFamily)), bajo licencia **SIL Open Font License 1.1** (incluida en `panelclean/fuentes/OFL.txt`). La aplicación la carga al iniciar, sin instalarla en el sistema.
