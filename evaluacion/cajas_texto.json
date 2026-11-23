@@ -1,0 +1,2966 @@
+{
+ "slam dunk": {
+  "paginas": {
+   "36603-1.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 45,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 161,
+      "x": 117,
+      "y": 170
+     },
+     {
+      "h": 44,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 208,
+      "x": 163,
+      "y": 243
+     },
+     {
+      "h": 41,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 222,
+      "x": 156,
+      "y": 755
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-10.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 73,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 77,
+      "x": 436,
+      "y": 115
+     },
+     {
+      "h": 50,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 70,
+      "x": 139,
+      "y": 265
+     },
+     {
+      "h": 81,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 76,
+      "x": 65,
+      "y": 269
+     },
+     {
+      "h": 94,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 78,
+      "x": 225,
+      "y": 270
+     },
+     {
+      "h": 48,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 62,
+      "x": 0,
+      "y": 273
+     },
+     {
+      "h": 69,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 75,
+      "x": 441,
+      "y": 288
+     },
+     {
+      "h": 72,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 72,
+      "x": 344,
+      "y": 439
+     },
+     {
+      "h": 37,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 31,
+      "x": 0,
+      "y": 481
+     },
+     {
+      "h": 91,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 76,
+      "x": 313,
+      "y": 535
+     },
+     {
+      "h": 81,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 64,
+      "x": 242,
+      "y": 542
+     },
+     {
+      "h": 59,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 77,
+      "x": 0,
+      "y": 560
+     },
+     {
+      "h": 66,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 57,
+      "x": 382,
+      "y": 806
+     },
+     {
+      "h": 26,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 36,
+      "x": 4,
+      "y": 130
+     },
+     {
+      "h": 51,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 53,
+      "x": 308,
+      "y": 726
+     },
+     {
+      "h": 14,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 29,
+      "x": 226,
+      "y": 730
+     },
+     {
+      "h": 15,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 28,
+      "x": 89,
+      "y": 725
+     },
+     {
+      "h": 13,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 24,
+      "x": 65,
+      "y": 739
+     },
+     {
+      "h": 12,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 24,
+      "x": 50,
+      "y": 769
+     },
+     {
+      "h": 14,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 18,
+      "x": 30,
+      "y": 807
+     },
+     {
+      "h": 14,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 22,
+      "x": 15,
+      "y": 759
+     },
+     {
+      "h": 15,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 21,
+      "x": 0,
+      "y": 823
+     },
+     {
+      "h": 15,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 24,
+      "x": 0,
+      "y": 784
+     },
+     {
+      "h": 55,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 55,
+      "x": 201,
+      "y": 135
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-11.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 72,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 71,
+      "x": 216,
+      "y": 239
+     },
+     {
+      "h": 56,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 35,
+      "x": 284,
+      "y": 268
+     },
+     {
+      "h": 64,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 64,
+      "x": 330,
+      "y": 281
+     },
+     {
+      "h": 59,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 52,
+      "x": 19,
+      "y": 303
+     },
+     {
+      "h": 56,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 55,
+      "x": 229,
+      "y": 408
+     },
+     {
+      "h": 81,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 90,
+      "x": 11,
+      "y": 410
+     },
+     {
+      "h": 48,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 74,
+      "x": 15,
+      "y": 543
+     },
+     {
+      "h": 69,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 85,
+      "x": 460,
+      "y": 548
+     },
+     {
+      "h": 21,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 41,
+      "x": 220,
+      "y": 634
+     },
+     {
+      "h": 73,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 53,
+      "x": 297,
+      "y": 801
+     },
+     {
+      "h": 17,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 28,
+      "x": 24,
+      "y": 94
+     },
+     {
+      "h": 16,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 31,
+      "x": 60,
+      "y": 81
+     },
+     {
+      "h": 20,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 34,
+      "x": 110,
+      "y": 191
+     },
+     {
+      "h": 17,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 29,
+      "x": 226,
+      "y": 112
+     },
+     {
+      "h": 18,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 34,
+      "x": 315,
+      "y": 86
+     },
+     {
+      "h": 30,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 46,
+      "x": 374,
+      "y": 416
+     },
+     {
+      "h": 36,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 41,
+      "x": 449,
+      "y": 421
+     },
+     {
+      "h": 16,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 26,
+      "x": 274,
+      "y": 621
+     },
+     {
+      "h": 28,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 36,
+      "x": 247,
+      "y": 559
+     },
+     {
+      "h": 15,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 34,
+      "x": 156,
+      "y": 654
+     },
+     {
+      "h": 19,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 34,
+      "x": 252,
+      "y": 677
+     },
+     {
+      "h": 21,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 39,
+      "x": 26,
+      "y": 763
+     },
+     {
+      "h": 17,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 27,
+      "x": 274,
+      "y": 819
+     },
+     {
+      "h": 96,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 43,
+      "x": 60,
+      "y": 673
+     },
+     {
+      "h": 68,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 68,
+      "x": 95,
+      "y": 792
+     },
+     {
+      "h": 65,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 33,
+      "x": 271,
+      "y": 734
+     },
+     {
+      "h": 38,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 41,
+      "x": 62,
+      "y": 257
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-12.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 68,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 137,
+      "x": 382,
+      "y": 59
+     },
+     {
+      "h": 41,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 39,
+      "x": 19,
+      "y": 116
+     },
+     {
+      "h": 79,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 60,
+      "x": 460,
+      "y": 237
+     },
+     {
+      "h": 66,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 84,
+      "x": 432,
+      "y": 407
+     },
+     {
+      "h": 56,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 83,
+      "x": 6,
+      "y": 408
+     },
+     {
+      "h": 56,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 65,
+      "x": 456,
+      "y": 520
+     },
+     {
+      "h": 39,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 64,
+      "x": 302,
+      "y": 667
+     },
+     {
+      "h": 18,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 26,
+      "x": 333,
+      "y": 160
+     },
+     {
+      "h": 36,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 40,
+      "x": 324,
+      "y": 243
+     },
+     {
+      "h": 70,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 38,
+      "x": 214,
+      "y": 535
+     },
+     {
+      "h": 31,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 62,
+      "x": 457,
+      "y": 662
+     },
+     {
+      "h": 37,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 39,
+      "x": 303,
+      "y": 799
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-13.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 114,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 109,
+      "x": 424,
+      "y": 51
+     },
+     {
+      "h": 43,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 45,
+      "x": 221,
+      "y": 97
+     },
+     {
+      "h": 85,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 96,
+      "x": 449,
+      "y": 418
+     },
+     {
+      "h": 55,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 54,
+      "x": 57,
+      "y": 542
+     },
+     {
+      "h": 82,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 92,
+      "x": 21,
+      "y": 688
+     },
+     {
+      "h": 41,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 44,
+      "x": 330,
+      "y": 440
+     },
+     {
+      "h": 19,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 49,
+      "x": 189,
+      "y": 431
+     },
+     {
+      "h": 55,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 34,
+      "x": 159,
+      "y": 529
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-14.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 70,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 62,
+      "x": 0,
+      "y": 55
+     },
+     {
+      "h": 38,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 40,
+      "x": 0,
+      "y": 263
+     },
+     {
+      "h": 93,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 58,
+      "x": 148,
+      "y": 316
+     },
+     {
+      "h": 44,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 40,
+      "x": 0,
+      "y": 473
+     },
+     {
+      "h": 107,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 92,
+      "x": 0,
+      "y": 722
+     },
+     {
+      "h": 47,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 38,
+      "x": 423,
+      "y": 94
+     },
+     {
+      "h": 40,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 63,
+      "x": 132,
+      "y": 86
+     },
+     {
+      "h": 45,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 84,
+      "x": 15,
+      "y": 631
+     },
+     {
+      "h": 40,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 35,
+      "x": 149,
+      "y": 614
+     },
+     {
+      "h": 26,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 74,
+      "x": 320,
+      "y": 640
+     },
+     {
+      "h": 72,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 98,
+      "x": 419,
+      "y": 632
+     },
+     {
+      "h": 99,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 104,
+      "x": 417,
+      "y": 756
+     },
+     {
+      "h": 95,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 55,
+      "x": 100,
+      "y": 611
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-15.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 40,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 42,
+      "x": 138,
+      "y": 107
+     },
+     {
+      "h": 26,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 42,
+      "x": 328,
+      "y": 110
+     },
+     {
+      "h": 37,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 34,
+      "x": 69,
+      "y": 325
+     },
+     {
+      "h": 46,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 66,
+      "x": 478,
+      "y": 326
+     },
+     {
+      "h": 84,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 85,
+      "x": 21,
+      "y": 625
+     },
+     {
+      "h": 84,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 99,
+      "x": 181,
+      "y": 631
+     },
+     {
+      "h": 94,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 74,
+      "x": 16,
+      "y": 764
+     },
+     {
+      "h": 59,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 34,
+      "x": 293,
+      "y": 100
+     },
+     {
+      "h": 71,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 42,
+      "x": 355,
+      "y": 186
+     },
+     {
+      "h": 41,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 74,
+      "x": 461,
+      "y": 86
+     },
+     {
+      "h": 71,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 82,
+      "x": 405,
+      "y": 152
+     },
+     {
+      "h": 50,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 35,
+      "x": 493,
+      "y": 198
+     },
+     {
+      "h": 46,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 45,
+      "x": 182,
+      "y": 178
+     },
+     {
+      "h": 47,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 42,
+      "x": 14,
+      "y": 101
+     },
+     {
+      "h": 83,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 78,
+      "x": 144,
+      "y": 295
+     },
+     {
+      "h": 88,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 113,
+      "x": 28,
+      "y": 395
+     },
+     {
+      "h": 95,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 79,
+      "x": 210,
+      "y": 771
+     },
+     {
+      "h": 104,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 68,
+      "x": 288,
+      "y": 632
+     },
+     {
+      "h": 80,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 30,
+      "x": 490,
+      "y": 633
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-16.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 64,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 63,
+      "x": 126,
+      "y": 45
+     },
+     {
+      "h": 50,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 62,
+      "x": 252,
+      "y": 52
+     },
+     {
+      "h": 38,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 64,
+      "x": 0,
+      "y": 66
+     },
+     {
+      "h": 94,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 114,
+      "x": 412,
+      "y": 90
+     },
+     {
+      "h": 53,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 90,
+      "x": 437,
+      "y": 366
+     },
+     {
+      "h": 54,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 101,
+      "x": 407,
+      "y": 444
+     },
+     {
+      "h": 21,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 34,
+      "x": 42,
+      "y": 448
+     },
+     {
+      "h": 63,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 63,
+      "x": 207,
+      "y": 525
+     },
+     {
+      "h": 59,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 91,
+      "x": 376,
+      "y": 525
+     },
+     {
+      "h": 27,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 66,
+      "x": 0,
+      "y": 781
+     },
+     {
+      "h": 45,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 59,
+      "x": 185,
+      "y": 204
+     },
+     {
+      "h": 19,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 33,
+      "x": 271,
+      "y": 209
+     },
+     {
+      "h": 33,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 38,
+      "x": 315,
+      "y": 109
+     },
+     {
+      "h": 61,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 41,
+      "x": 359,
+      "y": 96
+     },
+     {
+      "h": 34,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 30,
+      "x": 371,
+      "y": 302
+     },
+     {
+      "h": 36,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 57,
+      "x": 47,
+      "y": 376
+     },
+     {
+      "h": 29,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 45,
+      "x": 81,
+      "y": 447
+     },
+     {
+      "h": 45,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 49,
+      "x": 329,
+      "y": 699
+     },
+     {
+      "h": 52,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 55,
+      "x": 383,
+      "y": 700
+     },
+     {
+      "h": 49,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 64,
+      "x": 457,
+      "y": 696
+     },
+     {
+      "h": 46,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 15,
+      "x": 340,
+      "y": 524
+     },
+     {
+      "h": 63,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 23,
+      "x": 289,
+      "y": 696
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-17.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 33,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 59,
+      "x": 23,
+      "y": 87
+     },
+     {
+      "h": 116,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 77,
+      "x": 449,
+      "y": 447
+     },
+     {
+      "h": 78,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 47,
+      "x": 498,
+      "y": 602
+     },
+     {
+      "h": 45,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 83,
+      "x": 211,
+      "y": 606
+     },
+     {
+      "h": 52,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 56,
+      "x": 21,
+      "y": 752
+     },
+     {
+      "h": 48,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 66,
+      "x": 231,
+      "y": 775
+     },
+     {
+      "h": 24,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 43,
+      "x": 190,
+      "y": 259
+     },
+     {
+      "h": 192,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 178,
+      "x": 211,
+      "y": 34
+     },
+     {
+      "h": 263,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 183,
+      "x": 14,
+      "y": 187
+     },
+     {
+      "h": 31,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 44,
+      "x": 78,
+      "y": 520
+     },
+     {
+      "h": 50,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 83,
+      "x": 303,
+      "y": 605
+     },
+     {
+      "h": 45,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 37,
+      "x": 350,
+      "y": 695
+     },
+     {
+      "h": 88,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 96,
+      "x": 304,
+      "y": 786
+     },
+     {
+      "h": 77,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 87,
+      "x": 24,
+      "y": 636
+     },
+     {
+      "h": 59,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 37,
+      "x": 108,
+      "y": 618
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-18.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 84,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 107,
+      "x": 86,
+      "y": 74
+     },
+     {
+      "h": 85,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 158,
+      "x": 378,
+      "y": 278
+     },
+     {
+      "h": 82,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 98,
+      "x": 16,
+      "y": 282
+     },
+     {
+      "h": 22,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 24,
+      "x": 91,
+      "y": 524
+     },
+     {
+      "h": 43,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 73,
+      "x": 200,
+      "y": 680
+     },
+     {
+      "h": 96,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 170,
+      "x": 68,
+      "y": 804
+     },
+     {
+      "h": 93,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 76,
+      "x": 443,
+      "y": 33
+     },
+     {
+      "h": 60,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 49,
+      "x": 251,
+      "y": 274
+     },
+     {
+      "h": 69,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 72,
+      "x": 169,
+      "y": 272
+     },
+     {
+      "h": 50,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 77,
+      "x": 308,
+      "y": 553
+     },
+     {
+      "h": 112,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 92,
+      "x": 438,
+      "y": 524
+     },
+     {
+      "h": 59,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 40,
+      "x": 394,
+      "y": 626
+     },
+     {
+      "h": 67,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 38,
+      "x": 274,
+      "y": 620
+     },
+     {
+      "h": 31,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 38,
+      "x": 274,
+      "y": 714
+     },
+     {
+      "h": 21,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 77,
+      "x": 357,
+      "y": 517
+     },
+     {
+      "h": 49,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 68,
+      "x": 211,
+      "y": 520
+     },
+     {
+      "h": 37,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 26,
+      "x": 45,
+      "y": 680
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-19.jpg": {
+    "alto": 653,
+    "ancho": 800,
+    "cajas": [
+     {
+      "h": 68,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 88,
+      "x": 599,
+      "y": 127
+     },
+     {
+      "h": 91,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 102,
+      "x": 10,
+      "y": 241
+     },
+     {
+      "h": 41,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 64,
+      "x": 134,
+      "y": 262
+     },
+     {
+      "h": 78,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 91,
+      "x": 121,
+      "y": 440
+     },
+     {
+      "h": 40,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 60,
+      "x": 0,
+      "y": 457
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-2.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 89,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 124,
+      "x": 19,
+      "y": 93
+     },
+     {
+      "h": 75,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 115,
+      "x": 408,
+      "y": 97
+     },
+     {
+      "h": 29,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 120,
+      "x": 401,
+      "y": 260
+     },
+     {
+      "h": 27,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 82,
+      "x": 49,
+      "y": 283
+     },
+     {
+      "h": 141,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 92,
+      "x": 453,
+      "y": 325
+     },
+     {
+      "h": 47,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 49,
+      "x": 476,
+      "y": 747
+     },
+     {
+      "h": 104,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 192,
+      "x": 0,
+      "y": 350
+     },
+     {
+      "h": 79,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 105,
+      "x": 340,
+      "y": 364
+     },
+     {
+      "h": 204,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 542,
+      "x": 0,
+      "y": 484
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-20.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 66,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 66,
+      "x": 61,
+      "y": 45
+     },
+     {
+      "h": 81,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 80,
+      "x": 305,
+      "y": 497
+     },
+     {
+      "h": 69,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 71,
+      "x": 473,
+      "y": 499
+     },
+     {
+      "h": 77,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 78,
+      "x": 214,
+      "y": 512
+     },
+     {
+      "h": 78,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 81,
+      "x": 300,
+      "y": 720
+     },
+     {
+      "h": 18,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 29,
+      "x": 338,
+      "y": 31
+     },
+     {
+      "h": 19,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 29,
+      "x": 316,
+      "y": 70
+     },
+     {
+      "h": 214,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 104,
+      "x": 434,
+      "y": 14
+     },
+     {
+      "h": 122,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 91,
+      "x": 290,
+      "y": 101
+     },
+     {
+      "h": 70,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 59,
+      "x": 229,
+      "y": 48
+     },
+     {
+      "h": 77,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 30,
+      "x": 259,
+      "y": 146
+     },
+     {
+      "h": 21,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 39,
+      "x": 21,
+      "y": 88
+     },
+     {
+      "h": 51,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 57,
+      "x": 14,
+      "y": 23
+     },
+     {
+      "h": 41,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 56,
+      "x": 85,
+      "y": 130
+     },
+     {
+      "h": 22,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 61,
+      "x": 236,
+      "y": 301
+     },
+     {
+      "h": 55,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 46,
+      "x": 169,
+      "y": 306
+     },
+     {
+      "h": 53,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 24,
+      "x": 13,
+      "y": 309
+     },
+     {
+      "h": 31,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 35,
+      "x": 422,
+      "y": 353
+     },
+     {
+      "h": 53,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 22,
+      "x": 359,
+      "y": 378
+     },
+     {
+      "h": 160,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 58,
+      "x": 487,
+      "y": 304
+     },
+     {
+      "h": 62,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 118,
+      "x": 423,
+      "y": 726
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-21.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 65,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 90,
+      "x": 172,
+      "y": 48
+     },
+     {
+      "h": 50,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 64,
+      "x": 472,
+      "y": 49
+     },
+     {
+      "h": 66,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 67,
+      "x": 467,
+      "y": 191
+     },
+     {
+      "h": 82,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 94,
+      "x": 0,
+      "y": 197
+     },
+     {
+      "h": 95,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 104,
+      "x": 429,
+      "y": 351
+     },
+     {
+      "h": 58,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 83,
+      "x": 166,
+      "y": 631
+     },
+     {
+      "h": 64,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 80,
+      "x": 305,
+      "y": 640
+     },
+     {
+      "h": 38,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 57,
+      "x": 275,
+      "y": 727
+     },
+     {
+      "h": 32,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 38,
+      "x": 289,
+      "y": 284
+     },
+     {
+      "h": 70,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 56,
+      "x": 270,
+      "y": 354
+     },
+     {
+      "h": 37,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 41,
+      "x": 197,
+      "y": 755
+     },
+     {
+      "h": 113,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 100,
+      "x": 431,
+      "y": 626
+     },
+     {
+      "h": 24,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 24,
+      "x": 65,
+      "y": 750
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-22.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 139,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 86,
+      "x": 459,
+      "y": 26
+     },
+     {
+      "h": 109,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 153,
+      "x": 168,
+      "y": 43
+     },
+     {
+      "h": 47,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 98,
+      "x": 29,
+      "y": 55
+     },
+     {
+      "h": 128,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 62,
+      "x": 462,
+      "y": 179
+     },
+     {
+      "h": 94,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 88,
+      "x": 212,
+      "y": 220
+     },
+     {
+      "h": 51,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 45,
+      "x": 321,
+      "y": 246
+     },
+     {
+      "h": 69,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 77,
+      "x": 458,
+      "y": 587
+     },
+     {
+      "h": 26,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 30,
+      "x": 46,
+      "y": 634
+     },
+     {
+      "h": 31,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 51,
+      "x": 13,
+      "y": 725
+     },
+     {
+      "h": 20,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 28,
+      "x": 327,
+      "y": 37
+     },
+     {
+      "h": 58,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 80,
+      "x": 195,
+      "y": 718
+     },
+     {
+      "h": 71,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 85,
+      "x": 278,
+      "y": 666
+     },
+     {
+      "h": 71,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 66,
+      "x": 335,
+      "y": 767
+     },
+     {
+      "h": 44,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 38,
+      "x": 397,
+      "y": 647
+     },
+     {
+      "h": 47,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 34,
+      "x": 448,
+      "y": 662
+     },
+     {
+      "h": 56,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 49,
+      "x": 408,
+      "y": 729
+     },
+     {
+      "h": 81,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 28,
+      "x": 242,
+      "y": 580
+     },
+     {
+      "h": 156,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 199,
+      "x": 17,
+      "y": 330
+     },
+     {
+      "h": 78,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 93,
+      "x": 26,
+      "y": 477
+     },
+     {
+      "h": 76,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 79,
+      "x": 345,
+      "y": 446
+     },
+     {
+      "h": 102,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 51,
+      "x": 379,
+      "y": 204
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-23.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 39,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 76,
+      "x": 297,
+      "y": 71
+     },
+     {
+      "h": 69,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 79,
+      "x": 449,
+      "y": 447
+     },
+     {
+      "h": 102,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 91,
+      "x": 112,
+      "y": 669
+     },
+     {
+      "h": 60,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 66,
+      "x": 7,
+      "y": 190
+     },
+     {
+      "h": 86,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 51,
+      "x": 100,
+      "y": 420
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-24.jpg": {
+    "alto": 639,
+    "ancho": 800,
+    "cajas": [
+     {
+      "h": 36,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 131,
+      "x": 586,
+      "y": 155
+     },
+     {
+      "h": 266,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 224,
+      "x": 537,
+      "y": 263
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-25.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 125,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 133,
+      "x": 112,
+      "y": 66
+     },
+     {
+      "h": 37,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 70,
+      "x": 420,
+      "y": 552
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-26.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 98,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 75,
+      "x": 59,
+      "y": 541
+     },
+     {
+      "h": 406,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 430,
+      "x": 3,
+      "y": 3
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-27.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 53,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 38,
+      "x": 447,
+      "y": 403
+     },
+     {
+      "h": 48,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 23,
+      "x": 152,
+      "y": 611
+     },
+     {
+      "h": 128,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 48,
+      "x": 412,
+      "y": 72
+     },
+     {
+      "h": 32,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 44,
+      "x": 223,
+      "y": 421
+     },
+     {
+      "h": 49,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 72,
+      "x": 121,
+      "y": 453
+     },
+     {
+      "h": 108,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 84,
+      "x": 15,
+      "y": 427
+     },
+     {
+      "h": 105,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 101,
+      "x": 210,
+      "y": 521
+     },
+     {
+      "h": 86,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 96,
+      "x": 352,
+      "y": 513
+     },
+     {
+      "h": 39,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 75,
+      "x": 461,
+      "y": 520
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-28.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 45,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 49,
+      "x": 372,
+      "y": 45
+     },
+     {
+      "h": 54,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 62,
+      "x": 223,
+      "y": 80
+     },
+     {
+      "h": 100,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 110,
+      "x": 426,
+      "y": 82
+     },
+     {
+      "h": 39,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 63,
+      "x": 18,
+      "y": 203
+     },
+     {
+      "h": 57,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 81,
+      "x": 452,
+      "y": 350
+     },
+     {
+      "h": 57,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 68,
+      "x": 95,
+      "y": 599
+     },
+     {
+      "h": 81,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 113,
+      "x": 393,
+      "y": 610
+     },
+     {
+      "h": 35,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 52,
+      "x": 33,
+      "y": 349
+     },
+     {
+      "h": 117,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 123,
+      "x": 111,
+      "y": 328
+     },
+     {
+      "h": 80,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 74,
+      "x": 248,
+      "y": 336
+     },
+     {
+      "h": 54,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 43,
+      "x": 324,
+      "y": 70
+     },
+     {
+      "h": 89,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 52,
+      "x": 467,
+      "y": 213
+     },
+     {
+      "h": 84,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 67,
+      "x": 375,
+      "y": 202
+     },
+     {
+      "h": 69,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 75,
+      "x": 18,
+      "y": 62
+     },
+     {
+      "h": 31,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 48,
+      "x": 156,
+      "y": 92
+     },
+     {
+      "h": 83,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 62,
+      "x": 298,
+      "y": 709
+     },
+     {
+      "h": 61,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 27,
+      "x": 378,
+      "y": 776
+     },
+     {
+      "h": 51,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 30,
+      "x": 423,
+      "y": 789
+     },
+     {
+      "h": 49,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 34,
+      "x": 252,
+      "y": 791
+     },
+     {
+      "h": 37,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 45,
+      "x": 130,
+      "y": 722
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-29.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 85,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 209,
+      "x": 315,
+      "y": 770
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-3.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 64,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 102,
+      "x": 11,
+      "y": 97
+     },
+     {
+      "h": 76,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 97,
+      "x": 447,
+      "y": 313
+     },
+     {
+      "h": 108,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 95,
+      "x": 448,
+      "y": 45
+     },
+     {
+      "h": 52,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 66,
+      "x": 371,
+      "y": 51
+     },
+     {
+      "h": 40,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 29,
+      "x": 170,
+      "y": 134
+     },
+     {
+      "h": 81,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 54,
+      "x": 266,
+      "y": 78
+     },
+     {
+      "h": 43,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 48,
+      "x": 15,
+      "y": 640
+     },
+     {
+      "h": 80,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 52,
+      "x": 252,
+      "y": 626
+     },
+     {
+      "h": 37,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 55,
+      "x": 468,
+      "y": 587
+     },
+     {
+      "h": 77,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 85,
+      "x": 379,
+      "y": 562
+     },
+     {
+      "h": 89,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 137,
+      "x": 186,
+      "y": 568
+     },
+     {
+      "h": 74,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 96,
+      "x": 3,
+      "y": 554
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-30.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-4.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 114,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 109,
+      "x": 0,
+      "y": 487
+     },
+     {
+      "h": 109,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 89,
+      "x": 441,
+      "y": 597
+     },
+     {
+      "h": 29,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 111,
+      "x": 379,
+      "y": 372
+     },
+     {
+      "h": 61,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 91,
+      "x": 441,
+      "y": 420
+     },
+     {
+      "h": 78,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 110,
+      "x": 119,
+      "y": 610
+     },
+     {
+      "h": 77,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 99,
+      "x": 238,
+      "y": 606
+     },
+     {
+      "h": 96,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 93,
+      "x": 342,
+      "y": 600
+     },
+     {
+      "h": 63,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 40,
+      "x": 51,
+      "y": 600
+     },
+     {
+      "h": 49,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 51,
+      "x": 346,
+      "y": 707
+     },
+     {
+      "h": 54,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 55,
+      "x": 457,
+      "y": 711
+     },
+     {
+      "h": 43,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 52,
+      "x": 104,
+      "y": 443
+     },
+     {
+      "h": 51,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 278,
+      "x": 18,
+      "y": 72
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-5.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 82,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 59,
+      "x": 74,
+      "y": 353
+     },
+     {
+      "h": 40,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 55,
+      "x": 118,
+      "y": 395
+     },
+     {
+      "h": 51,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 93,
+      "x": 270,
+      "y": 567
+     },
+     {
+      "h": 54,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 58,
+      "x": 117,
+      "y": 579
+     },
+     {
+      "h": 40,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 39,
+      "x": 182,
+      "y": 414
+     },
+     {
+      "h": 63,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 77,
+      "x": 227,
+      "y": 375
+     },
+     {
+      "h": 36,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 34,
+      "x": 404,
+      "y": 372
+     },
+     {
+      "h": 83,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 78,
+      "x": 442,
+      "y": 367
+     },
+     {
+      "h": 44,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 36,
+      "x": 212,
+      "y": 580
+     },
+     {
+      "h": 69,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 37,
+      "x": 73,
+      "y": 538
+     },
+     {
+      "h": 48,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 77,
+      "x": 82,
+      "y": 734
+     },
+     {
+      "h": 48,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 30,
+      "x": 30,
+      "y": 751
+     },
+     {
+      "h": 71,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 41,
+      "x": 439,
+      "y": 721
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-6.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 87,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 110,
+      "x": 418,
+      "y": 91
+     },
+     {
+      "h": 78,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 116,
+      "x": 15,
+      "y": 97
+     },
+     {
+      "h": 82,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 108,
+      "x": 422,
+      "y": 286
+     },
+     {
+      "h": 49,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 77,
+      "x": 86,
+      "y": 300
+     },
+     {
+      "h": 43,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 55,
+      "x": 462,
+      "y": 582
+     },
+     {
+      "h": 30,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 28,
+      "x": 333,
+      "y": 282
+     },
+     {
+      "h": 96,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 102,
+      "x": 160,
+      "y": 603
+     },
+     {
+      "h": 55,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 58,
+      "x": 223,
+      "y": 317
+     },
+     {
+      "h": 34,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 41,
+      "x": 281,
+      "y": 294
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-7.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 44,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 79,
+      "x": 428,
+      "y": 152
+     },
+     {
+      "h": 53,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 82,
+      "x": 36,
+      "y": 134
+     },
+     {
+      "h": 78,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 84,
+      "x": 30,
+      "y": 602
+     },
+     {
+      "h": 67,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 62,
+      "x": 424,
+      "y": 480
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-8.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 84,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 61,
+      "x": 250,
+      "y": 252
+     },
+     {
+      "h": 43,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 40,
+      "x": 0,
+      "y": 311
+     },
+     {
+      "h": 68,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 42,
+      "x": 208,
+      "y": 460
+     },
+     {
+      "h": 82,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 42,
+      "x": 236,
+      "y": 760
+     },
+     {
+      "h": 83,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 41,
+      "x": 465,
+      "y": 137
+     },
+     {
+      "h": 30,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 49,
+      "x": 80,
+      "y": 265
+     },
+     {
+      "h": 50,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 52,
+      "x": 196,
+      "y": 263
+     },
+     {
+      "h": 80,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 68,
+      "x": 13,
+      "y": 382
+     },
+     {
+      "h": 69,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 37,
+      "x": 166,
+      "y": 455
+     },
+     {
+      "h": 55,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 44,
+      "x": 18,
+      "y": 473
+     },
+     {
+      "h": 29,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 49,
+      "x": 11,
+      "y": 569
+     },
+     {
+      "h": 85,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 63,
+      "x": 182,
+      "y": 562
+     },
+     {
+      "h": 67,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 59,
+      "x": 312,
+      "y": 253
+     },
+     {
+      "h": 52,
+      "origen": "mano",
+      "tipo": "ignorar",
+      "w": 45,
+      "x": 18,
+      "y": 652
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "36603-9.jpg": {
+    "alto": 900,
+    "ancho": 545,
+    "cajas": [
+     {
+      "h": 48,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 102,
+      "x": 15,
+      "y": 109
+     },
+     {
+      "h": 123,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 109,
+      "x": 10,
+      "y": 305
+     },
+     {
+      "h": 58,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 109,
+      "x": 436,
+      "y": 306
+     },
+     {
+      "h": 86,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 72,
+      "x": 156,
+      "y": 554
+     },
+     {
+      "h": 95,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 62,
+      "x": 239,
+      "y": 590
+     },
+     {
+      "h": 89,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 73,
+      "x": 7,
+      "y": 770
+     },
+     {
+      "h": 75,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 103,
+      "x": 424,
+      "y": 100
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   }
+  },
+  "reservada": false
+ }
+}

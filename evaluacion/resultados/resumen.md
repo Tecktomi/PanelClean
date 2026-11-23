@@ -8,16 +8,17 @@ Los intervalos entre corchetes son de confianza del 95 % (bootstrap). Los datos 
 
 | Métrica | Meta | Resultado | ¿Cumple? |
 |---|---|---|---|
-| Detección (F1, todas las obras) | ≥ 0,85 | 0,54 | No |
-| Detección (F1, obra de prueba tencho_isoro) | ≥ 0,85 | 0,68 | No |
+| Detección en OpenMantra (F1, criterio actual: centro y tamaño) | ≥ 0,85 | 0,93 | Sí |
+| Detección (F1, criterio actual, obra reservada tencho_isoro, consultada durante el desarrollo) | ≥ 0,85 | 0,91 | Sí |
+| Detección en OpenMantra (F1, criterio original: cubrir 80 % de la caja) | ≥ 0,85 | 0,11 | No |
 | Máscara (IoU medio, sintéticos) | ≥ 0,80 | 0,67 | No |
 | Selector (macro-F1, sintéticos) | ≥ 0,80 | 0,86 | Sí |
-| Selector (macro-F1, regiones reales, validación cruzada por obra) | ≥ 0,80 | 0,57 | No |
+| Selector (macro-F1, regiones reales, validación cruzada por obra) | ≥ 0,80 | 0,62 | No |
 | «Ajustar al texto»: zonas con ≥ 95 % de las letras cubiertas (rectángulo tal cual → ajustado) | sin meta | 77 % → 91 % | — |
 | «Ajustar al texto»: dibujo borrado por zona (rectángulo tal cual → ajustado) | sin meta | 272 px → 41 px | — |
 | Reconstrucción (MAE/PSNR/SSIM) | sin meta | ver sección 3 | — |
 | Conservación (píxeles fuera de la máscara) | 0 | 0 | Sí |
-| Rendimiento (máximo por página de 2048 px) | ≤ 15 s | 0,98 s | Sí |
+| Rendimiento (máximo por página de 2048 px) | ≤ 15 s | 0,47 s | Sí |
 | Hipótesis: adaptativo vs. mejor método único (máscara perfecta) | adaptativo mejor | MAE: peor · PSNR: mejor · SSIM: peor | — |
 | Hipótesis: adaptativo vs. mejor método único (máscara del sistema) | adaptativo mejor | MAE: sin diferencia significativa · PSNR: mejor · SSIM: sin diferencia significativa | — |
 
@@ -114,18 +115,46 @@ Píxeles modificados fuera de la máscara, en todas las limpiezas: **máximo 0**
 
 ## 5. Detección de texto (OpenMantra)
 
-Detector actual: `detect_bubbles` (heurístico, busca globos ovalados). Una caja de texto está acertada si al menos el 80 % queda dentro de una región detectada; una detección es correcta si contiene así algún texto. Como referencia se incluye el F1 con el criterio estándar (emparejamiento uno a uno con IoU ≥ 0,5), que castiga que el globo sea mucho más grande que el texto.
+Detector de «Detectar texto» y de «Procesar todas»: bloques de tinta rodeados de papel en la página entera, filtrados por un random forest de OpenCV que mira 17 medidas de cada bloque (`entrenar_detector.py`). Se informan las regiones con confianza ≥ 0,5, las que el modo automático limpia. Cada obra de desarrollo se mide con un modelo entrenado sin ella. **Criterio**: una región acierta un texto si su centro cae en la caja anotada y no mide más de 3 veces esa caja.
 
-| Obra | Páginas | Textos | Detecciones | Precisión | Recall | F1 | F1 (IoU ≥ 0,5) |
-|---|---|---|---|---|---|---|---|
-| tojime_no_siora | 46 | 334 | 533 | 0,45 | 0,72 | **0,55** | 0,22 |
-| balloon_dream | 38 | 314 | 175 | 0,58 | 0,40 | **0,48** | 0,14 |
-| tencho_isoro (prueba) | 40 | 311 | 206 | 0,83 | 0,58 | **0,68** | 0,20 |
-| boureisougi | 36 | 274 | 63 | 0,79 | 0,21 | **0,33** | 0,15 |
-| rasetugari | 54 | 359 | 400 | 0,52 | 0,62 | **0,57** | 0,23 |
-| **Todas** | 214 | 1592 | 1377 | 0,56 | 0,52 | **0,54** | 0,20 |
+**Qué no dice esta tabla.** `tencho_isoro` nunca se usó para entrenar, pero se consultó varias veces durante el desarrollo (para mirar errores y comparar alternativas), así que su resultado no es una prueba a ciegas. Y las cinco obras son del mismo conjunto, todas en japonés: no dice cómo le va en otros idiomas o estilos. Para eso están las series propias que se marcan con `marcar.py`.
 
-**Modo automático después de «Detectar globos».** Si se limpian todas las regiones detectadas sin revisarlas, el modo automático limpia 1124 y deja 253 para revisión. De los píxeles que borra, 172.113 (16 %) están fuera de las cajas de texto anotadas: es dibujo que se pierde. Las regiones de más del 5 % de la página (y más de 40.000 px) quedan para revisión, porque casi nunca son solo texto: suelen ser viñetas enteras.
+| Obra | Textos | Anterior (`detect_bubbles`): P · R · F1 | Precisión | Recall | F1 | F1 con el criterio original (anterior → actual) |
+|---|---|---|---|---|---|---|
+| tojime_no_siora | 334 | 0,36 · 0,58 · 0,45 | 0,94 | 0,94 | **0,94** | 0,55 → 0,21 |
+| balloon_dream | 314 | 0,31 · 0,17 · 0,22 | 0,98 | 0,94 | **0,96** | 0,48 → 0,13 |
+| tencho_isoro (reservada) | 311 | 0,55 · 0,37 · 0,44 | 0,88 | 0,93 | **0,91** | 0,68 → 0,07 |
+| boureisougi | 274 | 0,65 · 0,15 · 0,24 | 0,96 | 0,89 | **0,92** | 0,33 → 0,04 |
+| rasetugari | 359 | 0,39 · 0,43 · 0,41 | 0,90 | 0,93 | **0,92** | 0,57 → 0,09 |
+| **Desarrollo** | 1281 | 0,38 · 0,35 · 0,36 | 0,94 | 0,93 | **0,94** | 0,51 → 0,12 |
+| **Todas** | 1592 | 0,41 · 0,35 · 0,38 | 0,93 | 0,93 | **0,93** | 0,54 → 0,11 |
+
+El criterio original, usado hasta el 23/11, pedía cubrir el 80 % de la caja anotada. Las cajas de OpenMantra son más holgadas que las letras y las regiones actuales se ajustan a ellas, así que casi nunca lo cumplen aunque contengan todo el texto. Se informan los dos: el cambio de criterio favorece al detector actual.
+
+Contando también las dudosas (confianza ≥ 0,3, en naranja, que no se limpian solas), el recall es 0,95 y la precisión 0,84. El techo, si se aceptaran todos los candidatos, es 0,97.
+
+**Dibujo que borraría el modo automático.** De los píxeles que se limpian en todas las páginas, 3,7 % están fuera de las cajas de texto anotadas: 92.342 de 2.476.681. Con `detect_bubbles` eran 16 % (172.113 de 1.056.947).
+
+**Texto horizontal simulado.** En las páginas de desarrollo con los globos traducidos al inglés (`horizontales.py`), cada obra sin verla: precisión 0,91, recall 0,79 y techo 0,85. Es una aproximación: las fuentes son las mismas del entrenamiento y no hay páginas reales.
+
+**Escaneos distintos y clics** (30 páginas de desarrollo, sin usar el modelo). «Candidatos»: textos que el detector llega a proponer. «Clic»: textos que quedan con una región correcta al hacer clic en su centro. «Gigantes»: clics que confirman una región de más del 15 % de la hoja.
+
+| Variante | Textos | Candidatos | Clic | Gigantes |
+|---|---|---|---|---|
+| Original | 195 | 98 % | 98 % | 0 |
+| Papel 18 % más oscuro | 195 | 98 % | 98 % | 0 |
+| Papel amarillento | 195 | 98 % | 98 % | 0 |
+| Tinta lavada | 195 | 98 % | 98 % | 0 |
+| Sombra hacia un lado | 195 | 52 % | 98 % | 0 |
+| Resolución × 2 | 195 | 99 % | 99 % | 0 |
+| Resolución × 0,6 | 195 | 96 % | 96 % | 0 |
+
+**Series propias** (marcadas con `marcar.py`). «Sin verla»: el modelo no se entrenó con esa serie. «Viendo otras de sus páginas»: se entrenó con parte de ellas y se midió en las demás. Si la serie no es reservada, sus cajas partieron de las propuestas del detector, y eso lo favorece algo.
+
+| Serie | Textos | Candidatos (techo) | Precisión | Recall | F1 |
+|---|---|---|---|---|---|
+| Serie 1 (sin verla) | 271 | 0,74 | 0,98 | 0,43 | **0,59** |
+| Serie 1 (viendo otras de sus páginas) | 271 | 0,74 | 0,96 | 0,62 | **0,75** |
 
 ## 6. Rendimiento
 
@@ -133,7 +162,7 @@ Detector actual: `detect_bubbles` (heurístico, busca globos ovalados). Una caja
 
 | Mediana (s) | Máximo (s) | Regiones por página (media) | Meta |
 |---|---|---|---|
-| 0,40 | 0,98 | 7,8 | ≤ 15 s |
+| 0,35 | 0,47 | 8,2 | ≤ 15 s |
 
 Equipo: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz, 8 hilos, Windows 10.
 
@@ -144,34 +173,34 @@ Casi todo el texto de OpenMantra está en globos blancos, así que al etiquetar 
 | Real \ Predicha | Uniforme | Estructurado | Complejo | F1 (ponderado) |
 |---|---|---|---|---|
 | Uniforme | 316 | 3 | 1 | 0,99 |
-| Estructurado | 4 | 4 | 0 | 0,17 |
+| Estructurado | 1 | 4 | 0 | 0,26 |
 | Complejo | 2 | 11 | 12 | 0,65 |
 
-353 regiones, etiquetadas por 2 persona(s). Exactitud ponderada: **0,97** · Macro-F1 ponderado: **0,60** (sin ponderar: 0,64). Aún hay pocas regiones de: Estructurado (meta: 15 de cada una).
+350 regiones, etiquetadas por 2 persona(s). Exactitud ponderada: **0,98** · Macro-F1 ponderado: **0,63** (sin ponderar: 0,66). Aún hay pocas regiones de: Estructurado (meta: 15 de cada una).
 
-Los umbrales del selector se ajustaron con estas mismas regiones (salvo las de la obra de prueba tencho_isoro, que nunca se usan para ajustar) y con pares sintéticos de desarrollo (ver `calibrar_selector.py`), así que los valores de arriba son optimistas. La estimación honesta es la **validación cruzada por obra**: para cada obra se ajustan los umbrales sin ella y se mide en ella. Macro-F1 ponderado: **0,57** · F1 por clase: Uniforme 0,99 · Estructurado 0,16 · Complejo 0,55. Umbrales de cada ajuste (entropía en bits · tono oscuro): sin balloon_dream 2,0 · 40 · sin boureisougi 2,0 · 40 · sin rasetugari 2,0 · 50 · sin tencho_isoro 2,0 · 40 · sin tojime_no_siora 1,7 · 40.
+Los umbrales del selector se ajustaron con estas mismas regiones (salvo las de la obra de prueba tencho_isoro, que nunca se usan para ajustar) y con pares sintéticos de desarrollo (ver `calibrar_selector.py`), así que los valores de arriba son optimistas. La estimación honesta es la **validación cruzada por obra**: para cada obra se ajustan los umbrales sin ella y se mide en ella. Macro-F1 ponderado: **0,62** · F1 por clase: Uniforme 1,00 · Estructurado 0,24 · Complejo 0,63. Umbrales de cada ajuste (entropía en bits · tono oscuro): sin balloon_dream 2,5 · 40 · sin boureisougi 2,5 · 100 · sin rasetugari 2,0 · 50 · sin tencho_isoro 2,5 · 80 · sin tojime_no_siora 2,5 · 80.
 
 | Estrato | Etiquetadas | Regiones en OpenMantra |
 |---|---|---|
 | 1 | 76 | 81 |
-| 2 | 122 | 238 |
-| 3 | 63 | 477 |
-| 4 | 92 | 796 |
+| 2 | 121 | 238 |
+| 3 | 62 | 477 |
+| 4 | 91 | 796 |
 
-134 regiones tienen etiquetas de más de una persona; coinciden en 129 (96 %). Las que no coinciden quedan fuera hasta resolverlas.
+271 regiones tienen etiquetas de más de una persona; coinciden en 262 (97 %). Las que no coinciden quedan fuera hasta resolverlas.
 
 ## 8. Selección por zona aproximada («Ajustar al texto», OpenMantra)
 
-Simula a una persona que encierra cada texto a grandes rasgos: la caja anotada más un margen al azar de 10–70 % de su lado corto en cada lado (más 6 px). Se compara usar ese rectángulo tal cual como región con buscar el texto dentro de él (`texto_en_zona`); cada celda dice «tal cual → **ajustado**». Las letras de referencia son la máscara que da la caja anotada; el dibujo borrado son los píxeles de máscara fuera de todas las cajas anotadas. Los parámetros se ajustaron solo con las cuatro obras de desarrollo. Si no encuentra texto, la aplicación usa el rectángulo tal cual, y aquí también.
+Simula a una persona que encierra cada texto a grandes rasgos: la caja anotada más un margen al azar de 10–70 % de su lado corto en cada lado (más 6 px). Se compara usar ese rectángulo tal cual como región con buscar el texto dentro de él (`texto_en_zona`); cada celda dice «tal cual → **ajustado**». Las letras de referencia son la máscara que da la caja anotada; el dibujo borrado son los píxeles de máscara fuera de todas las cajas anotadas. Los parámetros se ajustaron con las cuatro obras de desarrollo; la reservada se consultó al desarrollarlo (para ver sus errores y probar una regla). Si no encuentra texto, la aplicación usa el rectángulo tal cual, y aquí también.
 
 | Obra | Zonas | Letras cubiertas (media) | Zonas con ≥ 95 % cubierto | Dibujo borrado (px por zona) | Zonas que borran > 50 px de dibujo | Bloques por texto | Bloques fuera de las cajas |
 |---|---|---|---|---|---|---|---|
-| tojime_no_siora | 120 | 0,97 → **0,98** | 81 % → **93 %** | 217 → **24** | 53 % → **6 %** | 1,19 | 8 % |
-| balloon_dream | 120 | 0,97 → **0,97** | 87 % → **93 %** | 415 → **69** | 54 % → **8 %** | 1,26 | 5 % |
-| tencho_isoro (prueba) | 120 | 0,98 → **0,98** | 88 % → **95 %** | 314 → **73** | 66 % → **22 %** | 1,37 | 22 % |
-| boureisougi | 120 | 0,86 → **0,95** | 49 % → **85 %** | 219 → **22** | 54 % → **6 %** | 1,14 | 4 % |
-| rasetugari | 120 | 0,95 → **0,97** | 80 % → **90 %** | 197 → **16** | 53 % → **7 %** | 1,09 | 4 % |
-| **Desarrollo (sin la prueba)** | 480 | 0,94 → **0,97** | 74 % → **90 %** | 262 → **33** | 54 % → **7 %** | 1,17 | 5 % |
+| tojime_no_siora | 120 | 0,97 → **0,98** | 81 % → **93 %** | 217 → **25** | 53 % → **6 %** | 1,18 | 8 % |
+| balloon_dream | 120 | 0,97 → **0,97** | 87 % → **93 %** | 415 → **71** | 54 % → **8 %** | 1,27 | 5 % |
+| tencho_isoro (reservada) | 120 | 0,98 → **0,98** | 88 % → **95 %** | 314 → **73** | 66 % → **22 %** | 1,38 | 22 % |
+| boureisougi | 120 | 0,86 → **0,95** | 49 % → **85 %** | 219 → **23** | 54 % → **6 %** | 1,15 | 4 % |
+| rasetugari | 120 | 0,95 → **0,97** | 80 % → **90 %** | 197 → **14** | 53 % → **7 %** | 1,09 | 4 % |
+| **Desarrollo (sin la reservada)** | 480 | 0,94 → **0,97** | 74 % → **90 %** | 262 → **33** | 54 % → **7 %** | 1,17 | 5 % |
 | **Todas** | 600 | 0,95 → **0,97** | 77 % → **91 %** | 272 → **41** | 56 % → **10 %** | 1,21 | 9 % |
 
 En 1 % de las zonas no encontró texto en globos (se usa el rectángulo). Un bloque «fuera de las cajas» tiene menos de la mitad de su área dentro de una caja anotada: casi siempre son trozos de dibujo encerrados por papel blanco (trazos gruesos, líneas punteadas que decoran el borde del globo), y a veces texto que OpenMantra no anotó.
