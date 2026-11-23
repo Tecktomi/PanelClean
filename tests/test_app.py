@@ -6,6 +6,7 @@ mismos métodos que usan los botones. Ejecutar desde la raíz del repositorio:
 """
 
 import tempfile
+import time
 import tkinter as tk
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ import numpy as np
 
 from panelclean import app as A
 
+MANGA = A.ROOT / 'datasets' / 'open-mantra' / 'images'
 TEXTOS = [(415, 340, 590, 445), (1095, 165, 1290, 260), (1120, 635, 1265, 740)]
 
 
@@ -122,6 +124,83 @@ class AppTest(unittest.TestCase):
         self.app.ajustar.set(False)
         tal_cual = self.app.add_zone(zona)[0]
         self.assertEqual(tal_cual.rect, (zona[0], zona[1], 255, 185))
+
+    # --- cola de hojas ----------------------------------------------------
+    def abrir_cola(self, *extra):
+        paginas = [A.ROOT / 'examples' / 'demo_pagina.png'] + [
+            MANGA / libro / 'ja' / '005.jpg'
+            for libro in ('rasetugari', 'tojime_no_siora')
+        ]
+        self.assertEqual(self.app.abrir_hojas(paginas + list(extra)), 3 + len(extra))
+
+    def procesar_cola(self):
+        # Como se espera que se use: el texto del ejemplo se encierra a mano; las
+        # demás hojas, sin regiones, usan la búsqueda automática de globos.
+        for x1, y1, x2, y2 in TEXTOS:
+            self.app.add_zone((x1 - 30, y1 - 30, x2 + 30, y2 + 30))
+        with mock.patch.object(A.messagebox, 'askyesnocancel', return_value=True):
+            self.app.procesar_todas()
+            limite = time.time() + 120
+            while self.app._procesando and time.time() < limite:
+                self.root.update()
+        self.assertFalse(self.app._procesando, 'la cola debe terminar')
+
+    def test_cada_hoja_conserva_sus_regiones(self):
+        self.abrir_cola()
+        self.assertTrue(
+            self.app.tira_hojas.winfo_manager(), 'con varias hojas se ve la tira'
+        )
+        self.app.add_region(TEXTOS[0])
+        self.app.ir_a_hoja(1)
+        self.assertEqual(self.app.regions, [])
+        self.app.add_region((100, 100, 200, 200))
+        self.app.ir_a_hoja_relativa(-1)
+        self.assertEqual(self.app.actual, 0)
+        self.assertEqual([r.rect for r in self.app.regions], [(415, 340, 175, 105)])
+        self.app.ir_a_hoja(1)
+        self.assertEqual(len(self.app.regions), 1)
+
+    def test_procesar_todas_limpia_cada_hoja(self):
+        self.abrir_cola()
+        self.procesar_cola()
+        for hoja in self.app.hojas:
+            self.assertTrue(hoja.procesada, hoja.nombre)
+            self.assertIn(hoja.estado, ('Lista', 'Revisar'))
+        ejemplo = self.app.hojas[0]
+        self.assertTrue(ejemplo.applied_ids, 'el ejemplo debe quedar con texto limpio')
+        self.assertFalse(np.array_equal(ejemplo.working, ejemplo.original))
+
+    def test_exportar_todas_guarda_cada_hoja_sin_pisar_nombres(self):
+        # La misma página dos veces: los nombres no deben repetirse.
+        self.abrir_cola(A.ROOT / 'examples' / 'demo_pagina.png')
+        self.procesar_cola()
+        self.app.ir_a_hoja(3)
+        self.procesar_cola()
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(
+                A.filedialog, 'askdirectory', return_value=tmp
+            ), mock.patch.object(A.messagebox, 'showinfo'):
+                self.app.exportar_todas()
+            nombres = {p.name for p in Path(tmp).iterdir()}
+        for nombre in ('demo_pagina_limpia.png', 'demo_pagina_limpia_2.png'):
+            self.assertIn(nombre, nombres)
+        exportadas = [h for h in self.app.hojas if h.applied_ids]
+        self.assertEqual(
+            len([n for n in nombres if n.endswith('_reporte.json')]), len(exportadas)
+        )
+        self.assertTrue(all(h.exportada for h in exportadas))
+
+    def test_avisa_antes_de_cerrar_limpiezas_sin_exportar(self):
+        self.seleccionar(0)
+        self.app.clean_selected()
+        with mock.patch.object(
+            A.messagebox, 'askyesno', return_value=False
+        ) as pregunta:
+            self.assertEqual(
+                self.app.load_image(MANGA / 'rasetugari' / 'ja' / '005.jpg'), 0
+            )
+        pregunta.assert_called_once()
+        self.assertEqual(Path(self.app.source_path).name, 'demo_pagina.png')
 
     # --- vistas ----------------------------------------------------------
     def test_la_vista_no_se_recalcula_al_mover_pero_si_al_cambiar_la_mascara(self):

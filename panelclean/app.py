@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import dataclass, field
 import shutil
 import sys
 from functools import lru_cache
@@ -244,6 +245,69 @@ class Tooltip:
             self.popup = None
 
 
+# Datos de la hoja abierta que cambian al pasar a otra hoja de la cola (ver Hoja).
+CAMPOS_HOJA = (
+    'original',
+    'working',
+    'regions',
+    'applied_ids',
+    'undo_stack',
+    'next_id',
+    'selected_indices',
+    'focus_index',
+    'zoom',
+    'panx',
+    'pany',
+)
+PASOS_AL_SALIR = 3  # pasos de «Deshacer» que conserva una hoja que no está abierta
+ALTO_MINIATURA = 62  # px, en la tira de hojas
+
+
+@dataclass
+class Hoja:
+    """Una página de la cola, con todo lo que se edita en ella.
+
+    La hoja abierta se edita directamente en los atributos de PanelCleanApp con los
+    mismos nombres (CAMPOS_HOJA); al pasar a otra hoja se guardan aquí.
+    procesada: se limpió al menos una vez (a mano o con «Procesar todas»).
+    exportada: se exportó y no cambió después.
+    """
+
+    ruta: str
+    original: np.ndarray
+    working: np.ndarray
+    regions: list = field(default_factory=list)
+    applied_ids: set = field(default_factory=set)
+    undo_stack: list = field(default_factory=list)
+    next_id: int = 1
+    selected_indices: set = field(default_factory=set)
+    focus_index: int | None = None
+    zoom: float = 1.0
+    panx: float = 0.0
+    pany: float = 0.0
+    procesada: bool = False
+    exportada: bool = False
+
+    @property
+    def nombre(self) -> str:
+        """Nombre del archivo de la página."""
+        return Path(self.ruta).name
+
+    @property
+    def estado(self) -> str:
+        """'Pendiente' (sin limpiar), 'Lista' (todas sus regiones limpias) o 'Revisar'
+        (quedan regiones sin limpiar, o no se encontró texto)."""
+        if not self.procesada:
+            return 'Pendiente'
+        if self.regions and all(r.id in self.applied_ids for r in self.regions):
+            return 'Lista'
+        return 'Revisar'
+
+
+COLOR_ESTADO = {'Lista': 'accent', 'Revisar': 'warn', 'Pendiente': 'muted'}
+TIPOS_IMAGEN = [('Imágenes', '*.png *.jpg *.jpeg *.bmp *.webp'), ('Todos', '*.*')]
+
+
 class PanelCleanApp:
     """Ventana principal de PanelClean.
 
@@ -255,6 +319,8 @@ class PanelCleanApp:
       (R01, R02…) que reutiliza el menor número libre.
     - applied_ids: ids de las regiones cuya limpieza está aplicada en working.
     - undo_stack: pasos anteriores para «Deshacer».
+    - hojas: la cola de páginas abiertas; actual es el índice de la que se edita.
+      El estado de arriba es el de la hoja actual (ver Hoja y CAMPOS_HOJA).
     """
 
     def __init__(self, root: tk.Tk):
@@ -274,6 +340,13 @@ class PanelCleanApp:
         # Los ids nunca se reutilizan, así deshacer no confunde regiones nuevas con antiguas.
         self.next_id = 1
         self.source_path = ''
+        self.hojas: list[Hoja] = []
+        self.actual: int | None = None
+        self._cola: list[int] = []  # hojas que faltan en «Procesar todas»
+        self._cola_total = 0
+        self._detenida = False
+        self._procesando = False  # «Procesar todas» en curso
+        self._miniaturas = {}
         self.show_masks = tk.BooleanVar(value=True)
         # Con «Ajustar al texto», un rectángulo arrastrado es solo la zona donde buscar letras.
         self.ajustar = tk.BooleanVar(value=True)
@@ -301,6 +374,8 @@ class PanelCleanApp:
         root.bind('<Control-z>', lambda _: self.undo())
         root.bind('<Delete>', lambda _: self.remove_region())
         root.bind('<Escape>', lambda _: self.change_tool('Seleccionar'))
+        root.bind('<Prior>', lambda _: self.ir_a_hoja_relativa(-1))  # Re Pág
+        root.bind('<Next>', lambda _: self.ir_a_hoja_relativa(1))  # Av Pág
         root.bind('<Destroy>', self._on_destroy, add='+')
         root.after_idle(self.render_views)
 
@@ -377,7 +452,7 @@ class PanelCleanApp:
         return btn
 
     def _header(self):
-        """Construye la barra superior: logo, versión y botones Ejemplo, Abrir imagen y Exportar."""
+        """Construye la barra superior: logo, versión y botones Ejemplo, Abrir hojas y Exportar."""
         top = tk.Frame(self.root, bg=C['top'], height=64)
         top.pack(fill='x')
         top.pack_propagate(False)
@@ -399,11 +474,15 @@ class PanelCleanApp:
             'Exportar',
             self.save_image,
             'primary',
-            'Guarda la página limpia y, junto a ella, la máscara y un reporte JSON.',
+            'Guarda la página abierta, ya limpia, y junto a ella la máscara y un reporte JSON.',
         ).pack(side='right', padx=(0, 18), pady=15)
-        self._button(top, 'Abrir imagen', self.open_image).pack(
-            side='right', padx=6, pady=15
-        )
+        self._button(
+            top,
+            'Abrir hojas',
+            self.open_image,
+            help_text='Abre una o varias páginas (Ctrl o Shift + clic para elegir varias). '
+            'Con varias, quedan en una cola que se puede procesar de una vez.',
+        ).pack(side='right', padx=6, pady=15)
         self._button(
             top,
             'Ejemplo',
@@ -695,6 +774,7 @@ class PanelCleanApp:
         )
         boards = tk.Frame(center, bg=C['bg'])
         boards.pack(fill='both', expand=True)
+        self.boards = boards
         self.view_canvases = {}
         for key, title in [('left', 'ORIGINAL'), ('right', 'RESULTADO')]:
             shell = tk.Frame(
@@ -737,13 +817,189 @@ class PanelCleanApp:
         # Botón que aparece en la vista ORIGINAL mientras no hay ninguna página abierta.
         self.add_button = self._button(
             self.view_canvases['left'],
-            'Agregar imagen',
+            'Agregar hojas',
             self.open_image,
             'primary',
             alto=42,
             tam=11,
         )
+        self.tira_hojas = self._construir_tira(center)
         return center
+
+    def _construir_tira(self, parent):
+        """Tira de hojas bajo las vistas: miniaturas de la cola y botones para procesarla.
+
+        Solo se muestra con dos hojas o más (ver _actualizar_tira).
+        """
+        tira = tk.Frame(parent, bg=C['bg'])
+        izquierda = tk.Frame(tira, bg=C['bg'], width=118)
+        izquierda.pack(side='left', fill='y', padx=(4, 10))
+        izquierda.pack_propagate(False)
+        self._label(izquierda, 'Hojas', 11, 'text', True).pack(anchor='w', pady=(8, 0))
+        self.contador_hojas = self._label(
+            izquierda, '', 9, 'muted', justify='left', wraplength=114
+        )
+        self.contador_hojas.pack(anchor='w')
+        acciones = tk.Frame(tira, bg=C['bg'])
+        acciones.pack(side='right', fill='y', padx=(10, 0))
+        self.boton_procesar = self._button(
+            acciones,
+            'Procesar todas',
+            self.procesar_todas,
+            'primary',
+            help_text='Crea las máscaras y limpia en automático todas las hojas, una tras otra. '
+            'Las regiones dudosas quedan sin limpiar, para revisarlas.',
+            ancho=132,
+        )
+        self.boton_procesar.pack(pady=(8, 6))
+        self._button(
+            acciones,
+            'Exportar todas',
+            self.exportar_todas,
+            help_text='Guarda en una carpeta cada hoja limpia, con su máscara y su reporte.',
+            ancho=132,
+        ).pack()
+        cv = tk.Canvas(
+            tira,
+            height=ALTO_MINIATURA + 16,
+            bg=C['panel'],
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=C['line'],
+        )
+        cv.pack(side='left', fill='x', expand=True, pady=(6, 0))
+        cv.configure(xscrollincrement=20)
+
+        def desplazar(paso):
+            """Mueve la tira a los lados con la rueda del ratón."""
+            cv.xview_scroll(paso, 'units')
+
+        cv.bind('<MouseWheel>', lambda e: desplazar(-2 if e.delta > 0 else 2))
+        cv.bind('<Button-4>', lambda e: desplazar(-2))
+        cv.bind('<Button-5>', lambda e: desplazar(2))
+        self.lienzo_hojas = cv
+        return tira
+
+    def _miniatura(self, hoja):
+        """Miniatura del resultado de una hoja; se rehace solo si el resultado cambió."""
+        guardada = self._miniaturas.get(id(hoja))
+        if guardada is not None and guardada[0] is hoja.working:
+            return guardada[1]
+        alto, ancho = hoja.working.shape[:2]
+        tamano = (max(1, round(ancho * ALTO_MINIATURA / alto)), ALTO_MINIATURA)
+        chica = cv2.resize(hoja.working, tamano, interpolation=cv2.INTER_AREA)
+        foto = ImageTk.PhotoImage(
+            Image.fromarray(cv2.cvtColor(chica, cv2.COLOR_BGR2RGB)), master=self.root
+        )
+        self._miniaturas[id(hoja)] = (hoja.working, foto)
+        return foto
+
+    def _actualizar_tira(self):
+        """Dibuja la tira de hojas: una miniatura por hoja con su número y su estado
+        (punto rosa = lista, naranja = revisar, malva = pendiente) y un «+» para sumar
+        hojas. Con menos de dos hojas, la tira se oculta.
+        """
+        if len(self.hojas) < 2:
+            if self.tira_hojas.winfo_manager():
+                self.tira_hojas.pack_forget()
+                self._schedule_render()
+            return
+        if not self.tira_hojas.winfo_manager():
+            self.tira_hojas.pack(
+                side='bottom', fill='x', pady=(8, 0), before=self.boards
+            )
+            self._schedule_render()
+        self._guardar_hoja()
+        vivas = {id(h) for h in self.hojas}
+        self._miniaturas = {k: v for k, v in self._miniaturas.items() if k in vivas}
+        cv = self.lienzo_hojas
+        cv.delete('all')
+        x, arriba, alto = 10, 8, ALTO_MINIATURA
+        for i, hoja in enumerate(self.hojas):
+            foto = self._miniatura(hoja)
+            ancho = foto.width()
+            marca = f'hoja{i}'
+            es_actual = i == self.actual
+            cv.create_rectangle(
+                x - 3,
+                arriba - 3,
+                x + ancho + 2,
+                arriba + alto + 2,
+                outline=C['accent'] if es_actual else C['line'],
+                width=3 if es_actual else 1,
+                fill=C['bg'],
+                tags=marca,
+            )
+            cv.create_image(x, arriba, image=foto, anchor='nw', tags=marca)
+            # Número de la hoja (abajo a la izquierda) y punto de estado (arriba a la derecha).
+            cv.create_rectangle(
+                x,
+                arriba + alto - 15,
+                x + 19,
+                arriba + alto,
+                fill=C['bg'],
+                outline='',
+                tags=marca,
+            )
+            cv.create_text(
+                x + 10,
+                arriba + alto - 7,
+                text=str(i + 1),
+                fill=C['text'],
+                font=fuente(8, True),
+                tags=marca,
+            )
+            cv.create_oval(
+                x + ancho - 13,
+                arriba + 3,
+                x + ancho - 3,
+                arriba + 13,
+                fill=C[COLOR_ESTADO[hoja.estado]],
+                outline=C['bg'],
+                width=2,
+                tags=marca,
+            )
+            cv.tag_bind(marca, '<Button-1>', lambda e, i=i: self.ir_a_hoja(i))
+            cv.tag_bind(marca, '<Enter>', lambda e, h=hoja: self._describir_hoja(h))
+            cv.tag_bind(marca, '<Leave>', lambda e: self._describir_hoja(None))
+            x += ancho + 14
+        cv.create_rectangle(
+            x - 3,
+            arriba - 3,
+            x + 38,
+            arriba + alto + 2,
+            outline=C['accent'],
+            dash=(4, 3),
+            fill=C['bg'],
+            tags='mas',
+        )
+        cv.create_text(
+            x + 17,
+            arriba + alto / 2,
+            text='+',
+            fill=C['accent'],
+            font=fuente(18, True),
+            tags='mas',
+        )
+        cv.tag_bind('mas', '<Button-1>', lambda e: self.agregar_hojas())
+        cv.tag_bind('mas', '<Enter>', lambda e: self._describir_hoja('mas'))
+        cv.tag_bind('mas', '<Leave>', lambda e: self._describir_hoja(None))
+        cv.configure(scrollregion=(0, 0, x + 50, alto + 14))
+        self._describir_hoja(None)
+
+    def _describir_hoja(self, hoja):
+        """Texto bajo «Hojas»: la hoja bajo el cursor o, si no hay, el avance de la cola."""
+        if hoja == 'mas':
+            texto = 'Agregar más hojas a la cola'
+        elif hoja is not None:
+            texto = f'{hoja.nombre}\n{hoja.estado}'
+        else:
+            listas = sum(h.estado == 'Lista' for h in self.hojas)
+            revisar = sum(h.estado == 'Revisar' for h in self.hojas)
+            texto = f'Hoja {self.actual + 1} de {len(self.hojas)}\n{listas} listas'
+            if revisar:
+                texto += f', {revisar} por revisar'
+        self.contador_hojas.configure(text=texto)
 
     def _tira(self, parent, flecha, lado):
         """Franja angosta con el botón que vuelve a mostrar un panel oculto."""
@@ -814,50 +1070,156 @@ class PanelCleanApp:
         self.status_text.configure(text=text)
 
     def open_image(self):
-        """Pide un archivo de imagen y lo abre."""
-        path = filedialog.askopenfilename(
-            title='Abrir página de manga',
-            filetypes=[
-                ('Imágenes', '*.png *.jpg *.jpeg *.bmp *.webp'),
-                ('Todos', '*.*'),
-            ],
+        """Pide una o varias páginas y las abre en lugar de las que hay."""
+        rutas = filedialog.askopenfilenames(
+            title='Abrir hojas de manga', filetypes=TIPOS_IMAGEN
         )
-        if path:
-            self.load_image(path)
+        if rutas:
+            self.abrir_hojas(rutas)
+
+    def agregar_hojas(self):
+        """Pide más páginas y las suma al final de la cola."""
+        rutas = filedialog.askopenfilenames(
+            title='Agregar hojas a la cola', filetypes=TIPOS_IMAGEN
+        )
+        if rutas:
+            self.abrir_hojas(rutas, agregar=True)
 
     def load_image(self, path):
-        """Carga una página y reinicia regiones, limpiezas, historial y vista."""
-        try:
-            image = bgr_from_file(str(path))
-            if max(image.shape[:2]) > 3500 and not messagebox.askyesno(
-                'Imagen grande',
-                'Puede tardar más en procesarse. ¿Abrir de todas formas?',
-            ):
-                return
-            self.original = image
-            self.working = image.copy()
-            self.source_path = str(path)
-            self.regions = []
-            self.selected_indices = set()
-            self.focus_index = None
-            self.applied_ids = set()
-            self.undo_stack = []
-            self.next_id = 1
-            self.zoom = 1.0
-            self.panx = self.pany = 0.0
-            self.refresh_regions()
-            self.render_views()
-            self._set_status(
-                f'Abierta: {Path(path).name}  ·  {image.shape[1]} × {image.shape[0]} px'
-            )
-        except Exception as exc:
-            messagebox.showerror('No se pudo abrir la imagen', str(exc))
+        """Abre una sola página en lugar de las que hay."""
+        return self.abrir_hojas([path])
 
     def load_demo(self):
         """Abre la página de ejemplo incluida en examples/."""
         path = ROOT / 'examples' / 'demo_pagina.png'
         if path.exists():
             self.load_image(path)
+
+    def abrir_hojas(self, rutas, agregar=False):
+        """Abre las páginas dadas y muestra la primera de ellas.
+
+        Reemplazan a las hojas abiertas o, con agregar=True, se suman al final de la
+        cola. Antes de reemplazar, avisa si hay limpiezas sin exportar; con una sola
+        página de más de 3500 px de lado, pregunta antes de abrirla. Las que no se
+        pueden leer se informan y se omiten. Devuelve cuántas hojas se abrieron.
+        """
+        if self._procesando or (not agregar and not self._descartar_cambios()):
+            return 0
+        nuevas, fallidas = [], []
+        for k, ruta in enumerate(rutas):
+            if len(rutas) > 2:
+                self._set_status(f'Abriendo hojas: {k + 1} de {len(rutas)}…')
+                self.root.update_idletasks()
+            try:
+                imagen = bgr_from_file(str(ruta))
+            except Exception as exc:
+                fallidas.append(f'{Path(ruta).name}: {exc}')
+                continue
+            if (
+                len(rutas) == 1
+                and max(imagen.shape[:2]) > 3500
+                and not messagebox.askyesno(
+                    'Imagen grande',
+                    'Puede tardar más en procesarse. ¿Abrir de todas formas?',
+                )
+            ):
+                return 0
+            nuevas.append(Hoja(str(ruta), imagen, imagen.copy()))
+        if fallidas:
+            messagebox.showerror(
+                (
+                    'No se pudo abrir la imagen'
+                    if len(rutas) == 1
+                    else 'Algunas hojas no se pudieron abrir'
+                ),
+                '\n'.join(fallidas),
+            )
+        if not nuevas:
+            return 0
+        if agregar and self.hojas:
+            self._guardar_hoja()
+            primera = len(self.hojas)
+            self.hojas.extend(nuevas)
+        else:
+            self.hojas, self.actual, primera = nuevas, None, 0
+        self._mostrar_hoja(primera)
+        if len(nuevas) > 1:
+            self._set_status(
+                f'{len(nuevas)} hojas {"agregadas a" if agregar else "en"} la cola. '
+                'Encierra el texto de cada una o pulsa «Procesar todas».'
+            )
+        return len(nuevas)
+
+    def _descartar_cambios(self):
+        """Antes de cerrar las hojas abiertas: si alguna tiene limpiezas sin exportar,
+        lo avisa. Devuelve True si se puede seguir."""
+        self._guardar_hoja()
+        sin_exportar = [
+            h.nombre for h in self.hojas if h.applied_ids and not h.exportada
+        ]
+        if not sin_exportar:
+            return True
+        lista = ', '.join(sin_exportar[:4]) + ('…' if len(sin_exportar) > 4 else '')
+        return messagebox.askyesno(
+            'Limpiezas sin exportar',
+            f'{len(sin_exportar)} hoja(s) tienen limpiezas sin exportar: {lista}.\n\n'
+            '¿Cerrarlas de todas formas?',
+        )
+
+    def _guardar_hoja(self):
+        """Guarda en su Hoja el estado de la hoja abierta (ver CAMPOS_HOJA)."""
+        if self.actual is None:
+            return
+        hoja = self.hojas[self.actual]
+        for campo in CAMPOS_HOJA:
+            setattr(hoja, campo, getattr(self, campo))
+
+    def _mostrar_hoja(self, indice):
+        """Pasa a editar la hoja indice de la cola: guarda la abierta y carga esa."""
+        if self.actual is not None and self.actual != indice:
+            self._guardar_hoja()
+            saliente = self.hojas[self.actual]
+            # Una hoja que no se ve conserva solo sus últimos pasos de «Deshacer»,
+            # para que una cola larga no llene la memoria.
+            saliente.undo_stack = saliente.undo_stack[-PASOS_AL_SALIR:]
+        hoja = self.hojas[indice]
+        for campo in CAMPOS_HOJA:
+            setattr(self, campo, getattr(hoja, campo))
+        self.actual = indice
+        self.source_path = hoja.ruta
+        self._vistas.clear()
+        self._drag_start = None
+        self._brush_active = False
+        self.refresh_regions()
+        self.render_views()
+        alto, ancho = self.original.shape[:2]
+        texto = f'Abierta: {hoja.nombre}  ·  {ancho} × {alto} px'
+        if len(self.hojas) > 1:
+            texto += f'  ·  hoja {indice + 1} de {len(self.hojas)}'
+        self._set_status(texto)
+
+    def ir_a_hoja(self, indice):
+        """Abre la hoja indice de la cola (no mientras corre «Procesar todas»)."""
+        if (
+            self._procesando
+            or not 0 <= indice < len(self.hojas)
+            or indice == self.actual
+        ):
+            return
+        self._mostrar_hoja(indice)
+
+    def ir_a_hoja_relativa(self, paso):
+        """Abre la hoja anterior (paso -1) o la siguiente (paso 1)."""
+        if self.actual is not None:
+            self.ir_a_hoja(self.actual + paso)
+
+    def _marcar_cambio(self, procesada=False):
+        """Anota que el resultado de la hoja abierta cambió: ya no está exportado."""
+        if self.actual is None:
+            return
+        hoja = self.hojas[self.actual]
+        hoja.exportada = False
+        hoja.procesada = hoja.procesada or procesada
 
     @staticmethod
     def _rect_overlap(a, b):
@@ -944,6 +1306,7 @@ class PanelCleanApp:
             self.reg_list.see(self.focus_index)
         self._updating_list = False
         self.refresh_inspector()
+        self._actualizar_tira()
 
     def on_list_selection(self, event=None):
         """Sincroniza la selección cuando el usuario hace clic en la lista de regiones."""
@@ -1064,6 +1427,7 @@ class PanelCleanApp:
         self.selected_indices = set()
         self.focus_index = None
         self._rebuild_without_snapshot()
+        self._marcar_cambio()
         self.refresh_regions()
         self.render_views()
 
@@ -1300,12 +1664,14 @@ class PanelCleanApp:
             else:
                 self.applied_ids.discard(r.id)
 
-    def _perform_clean(self, regions):
+    def _perform_clean(self, regions, preguntar=True):
         """Limpia las regiones dadas y guarda un paso de «Deshacer».
 
         Las regiones que quedan en «Revisión manual» o sin máscara no se aplican. El
         resultado se recompone siempre desde el original, para no aplicar inpainting
-        sobre zonas ya limpiadas.
+        sobre zonas ya limpiadas. Con preguntar=False (la cola de hojas), las regiones
+        para revisar con un método elegido a mano se dejan sin limpiar en vez de
+        pedir confirmación.
         """
         if self.original is None:
             return
@@ -1344,7 +1710,7 @@ class PanelCleanApp:
                         opts.method != 'Automático'
                         and r.classification == 'Revisar máscara'
                     ):
-                        confirmed = messagebox.askyesno(
+                        confirmed = preguntar and messagebox.askyesno(
                             'Confirmar limpieza',
                             f'{self._nombre(r)}: {r.review_reason}\n\n'
                             '¿Deseas aplicar el método elegido de todas formas?',
@@ -1356,6 +1722,7 @@ class PanelCleanApp:
                     self.applied_ids.add(r.id)
                     r.applied_radius = opts.radius
             self._rebuild_without_snapshot()
+            self._marcar_cambio(procesada=True)
             # 3) Resumen para la barra de estado.
             for r in regions:
                 if r.id in self.applied_ids:
@@ -1390,62 +1757,201 @@ class PanelCleanApp:
             self.selected_indices = set()
             self.focus_index = None
         self.working, self.applied_ids, self.regions = working, applied, regions
+        self._marcar_cambio()
         self.refresh_regions()
         self.render_views()
         self._set_status('Limpieza deshecha. Las regiones y máscaras siguen editables.')
 
+    def procesar_todas(self):
+        """Limpia en automático todas las hojas de la cola, una tras otra.
+
+        Cada hoja usa sus regiones; en las que no tienen ninguna, si el usuario lo
+        acepta, se buscan globos (detect_bubbles, experimental). Se crean las máscaras
+        que falten y cada región se limpia con su método (Automático por defecto):
+        las dudosas quedan sin limpiar, para revisarlas. Se procesa una hoja por vez
+        con after(), así la ventana responde y se ve el avance; pulsar otra vez el
+        botón («Detener») vacía la cola.
+        """
+        if self._procesando:
+            self._cola = []
+            self._detenida = True
+            return
+        if not self.hojas:
+            return
+        self._guardar_hoja()
+        sin_regiones = sum(not h.regions for h in self.hojas)
+        buscar = True
+        if sin_regiones:
+            buscar = messagebox.askyesnocancel(
+                'Hojas sin regiones',
+                f'{sin_regiones} de {len(self.hojas)} hojas no tienen regiones marcadas.\n\n'
+                '¿Buscar globos en ellas automáticamente? La búsqueda es experimental: '
+                'revisa esas hojas al terminar.\n\n'
+                'Sí: buscar y limpiar.   No: procesar solo las hojas con regiones.',
+            )
+            if buscar is None:
+                return
+        self._cola = [i for i, h in enumerate(self.hojas) if h.regions or buscar]
+        self._cola_total = len(self._cola)
+        self._detenida = False
+        if self._cola:
+            self._procesando = True
+            self.boton_procesar.configure(text='Detener')
+            self.root.after(1, self._procesar_siguiente)
+
+    def _procesar_siguiente(self):
+        """Procesa la siguiente hoja de «Procesar todas» y programa la que sigue."""
+        if not self._cola:
+            self._terminar_cola()
+            return
+        indice = self._cola.pop(0)
+        self._mostrar_hoja(indice)
+        hechas = self._cola_total - len(self._cola)
+        self._set_status(f'Procesando hojas: {hechas} de {self._cola_total}…')
+        self.root.update_idletasks()
+        if not self.regions:
+            self._agregar_encontradas(detect_bubbles(self.original))
+        if self.regions:
+            self._perform_clean(list(self.regions), preguntar=False)
+        else:
+            self._marcar_cambio(
+                procesada=True
+            )  # no se encontró texto: queda por revisar
+            self.refresh_regions()
+        self.root.after(15, self._procesar_siguiente)
+
+    def _terminar_cola(self):
+        """Cierra «Procesar todas»: restaura el botón y resume cómo quedó cada hoja."""
+        self._procesando = False
+        self.boton_procesar.configure(text='Procesar todas')
+        self._guardar_hoja()
+        listas = sum(h.estado == 'Lista' for h in self.hojas)
+        revisar = [h.nombre for h in self.hojas if h.estado == 'Revisar']
+        texto = 'Cola detenida' if self._detenida else 'Cola procesada'
+        texto += f': {listas} hoja(s) listas'
+        if revisar:
+            texto += f', {len(revisar)} por revisar (punto naranja)'
+        self._set_status(texto + '. Revisa las hojas y luego pulsa «Exportar todas».')
+        self._actualizar_tira()
+
+    def exportar_todas(self):
+        """Guarda en una carpeta cada hoja con alguna limpieza aplicada, como
+        <nombre>_limpia.png con su máscara y su reporte (ver _escribir_resultado)."""
+        if self._procesando or not self.hojas:
+            return
+        self._guardar_hoja()
+        con_limpieza = [h for h in self.hojas if h.applied_ids]
+        if not con_limpieza:
+            messagebox.showinfo(
+                'Nada que exportar', 'Ninguna hoja tiene limpiezas aplicadas todavía.'
+            )
+            return
+        carpeta = filedialog.askdirectory(
+            title='Carpeta donde guardar las hojas limpias', mustexist=True
+        )
+        if not carpeta:
+            return
+        destinos, usados = [], set()
+        for hoja in con_limpieza:
+            # Dos hojas con el mismo nombre (de carpetas distintas) no se pisan.
+            base = nombre = f'{Path(hoja.ruta).stem}_limpia'
+            numero = 2
+            while nombre.lower() in usados:
+                nombre = f'{base}_{numero}'
+                numero += 1
+            usados.add(nombre.lower())
+            destinos.append((hoja, Path(carpeta) / f'{nombre}.png'))
+        existentes = [d.name for _, d in destinos if d.exists()]
+        if existentes and not messagebox.askyesno(
+            'Reemplazar archivos',
+            f'{len(existentes)} archivo(s) ya existen en esa carpeta, por ejemplo '
+            f'{existentes[0]}.\n\n¿Reemplazarlos?',
+        ):
+            return
+        try:
+            for k, (hoja, destino) in enumerate(destinos):
+                self._set_status(f'Exportando hojas: {k + 1} de {len(destinos)}…')
+                self.root.update_idletasks()
+                self._escribir_resultado(destino, hoja)
+                hoja.exportada = True
+        except Exception as exc:
+            messagebox.showerror('Error al exportar', str(exc))
+            return
+        detalle = f'Se guardaron {len(destinos)} hojas en:\n{carpeta}'
+        revisar = [h.nombre for h, _ in destinos if h.estado == 'Revisar']
+        sin_limpiar = [h.nombre for h in self.hojas if not h.applied_ids]
+        if revisar:
+            detalle += f'\n\nCon regiones sin limpiar: {", ".join(revisar)}.'
+        if sin_limpiar:
+            detalle += f'\n\nSin limpiezas, no se exportaron: {", ".join(sin_limpiar)}.'
+        self._set_status(f'Se exportaron {len(destinos)} hojas.')
+        messagebox.showinfo('Exportación completada', detalle)
+
     def save_image(self):
-        """Exporta la página limpia (PNG), la máscara usada (_mascara.png) y un reporte (_reporte.json)."""
+        """Exporta la hoja abierta: imagen limpia (PNG), máscara (_mascara.png) y reporte (_reporte.json)."""
         if self.working is None:
             return
+        self._guardar_hoja()
+        hoja = self.hojas[self.actual]
         dest = filedialog.asksaveasfilename(
             defaultextension='.png',
-            initialfile='panelclean_resultado.png',
+            initialfile=f'{Path(hoja.ruta).stem}_limpia.png',
             filetypes=[('Imagen PNG', '*.png')],
             title='Exportar página limpia',
         )
         if not dest:
             return
         try:
-            write_png(dest, self.working)
-            mask = mask_whole(
-                self.original, [r for r in self.regions if r.id in self.applied_ids]
-            )
-            stem = str(Path(dest).with_suffix(''))
-            write_png(stem + '_mascara.png', cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR))
-            info = {
-                'proyecto': 'PanelClean',
-                'version': __version__,
-                'origen': Path(self.source_path).name,
-                'regiones': [
-                    {
-                        'region': self._nombre(r),
-                        'rect': r.rect,
-                        'procesada': r.id in self.applied_ids,
-                        'clase': r.classification,
-                        'metodo': r.last_method,
-                        'entropia': round(r.entropy, 3),
-                        'tono_oscuro': round(r.dark_level, 1),
-                        'textura': round(r.texture, 3),
-                        'varianza': round(r.variance, 1),
-                        'densidad_bordes': round(r.edge_density, 4),
-                        'pixeles_mascara': (
-                            int(cv2.countNonZero(r.mask)) if r.mask is not None else 0
-                        ),
-                    }
-                    for r in self.regions
-                ],
-            }
-            Path(stem + '_reporte.json').write_text(
-                json.dumps(info, ensure_ascii=False, indent=2), encoding='utf8'
-            )
+            nombres = self._escribir_resultado(dest, hoja)
+            hoja.exportada = True
             self._set_status('Se exportaron la imagen, máscara y reporte.')
             messagebox.showinfo(
-                'Exportación completada',
-                f'Guardados:\n{Path(dest).name}\n{Path(stem+"_mascara.png").name}\n{Path(stem+"_reporte.json").name}',
+                'Exportación completada', 'Guardados:\n' + '\n'.join(nombres)
             )
         except Exception as exc:
             messagebox.showerror('Error al exportar', str(exc))
+
+    def _escribir_resultado(self, destino, hoja):
+        """Escribe la hoja limpia en destino (PNG) y, junto a ella, la máscara de las
+        regiones aplicadas (<nombre>_mascara.png) y un reporte (<nombre>_reporte.json).
+        Devuelve los nombres de los tres archivos."""
+        destino = Path(destino)
+        stem = str(destino.with_suffix(''))
+        write_png(str(destino), hoja.working)
+        aplicadas = [r for r in hoja.regions if r.id in hoja.applied_ids]
+        mask = mask_whole(hoja.original, aplicadas)
+        write_png(stem + '_mascara.png', cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR))
+        info = {
+            'proyecto': 'PanelClean',
+            'version': __version__,
+            'origen': hoja.nombre,
+            'regiones': [
+                {
+                    'region': self._nombre(r),
+                    'rect': r.rect,
+                    'procesada': r.id in hoja.applied_ids,
+                    'clase': r.classification,
+                    'metodo': r.last_method,
+                    'entropia': round(r.entropy, 3),
+                    'tono_oscuro': round(r.dark_level, 1),
+                    'textura': round(r.texture, 3),
+                    'varianza': round(r.variance, 1),
+                    'densidad_bordes': round(r.edge_density, 4),
+                    'pixeles_mascara': (
+                        int(cv2.countNonZero(r.mask)) if r.mask is not None else 0
+                    ),
+                }
+                for r in hoja.regions
+            ],
+        }
+        Path(stem + '_reporte.json').write_text(
+            json.dumps(info, ensure_ascii=False, indent=2), encoding='utf8'
+        )
+        return [
+            destino.name,
+            Path(stem + '_mascara.png').name,
+            Path(stem + '_reporte.json').name,
+        ]
 
     def reset_view(self):
         """Vuelve al zoom inicial y centra las vistas."""
@@ -1584,7 +2090,7 @@ class PanelCleanApp:
         página entera en cada movimiento era lo que hacía lento el desplazamiento.
         Guarda en _mapping la escala y el desplazamiento de cada vista, que
         _to_image_xy usa para convertir clics a coordenadas de la imagen.
-        Sin ninguna página abierta, muestra el botón «Agregar imagen».
+        Sin ninguna página abierta, muestra el botón «Agregar hojas».
         """
         if self.original is None:
             self._render_sin_imagen()
@@ -1650,7 +2156,7 @@ class PanelCleanApp:
                     )
 
     def _render_sin_imagen(self):
-        """Pantalla inicial: invitación a abrir una página y el botón «Agregar imagen»."""
+        """Pantalla inicial: invitación a abrir páginas y el botón «Agregar hojas»."""
         for key, canvas in self.view_canvases.items():
             canvas.delete('all')
             w, h = canvas.winfo_width(), canvas.winfo_height()
@@ -1666,7 +2172,7 @@ class PanelCleanApp:
             canvas.create_text(
                 w / 2,
                 h / 2 - 52,
-                text='Abre una página de manga para empezar',
+                text='Abre una o varias páginas de manga para empezar',
                 fill=C['text'],
                 font=fuente(12, True),
             )
