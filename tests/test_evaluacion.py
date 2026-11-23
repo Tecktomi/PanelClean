@@ -5,7 +5,9 @@ Ejecutar desde la raíz del repositorio:
 """
 
 import math
+import shutil
 import tempfile
+import tkinter as tk
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -16,7 +18,7 @@ import numpy as np
 from evaluacion import cajas as K
 from evaluacion import calibrar_selector as C
 from evaluacion import entrenar_detector as D
-from evaluacion import horizontales
+from evaluacion import horizontales, marcar
 from evaluacion import evaluar as E
 from evaluacion import metricas as M
 from evaluacion import muestreo
@@ -407,6 +409,139 @@ class DetectorTest(unittest.TestCase):
         self.assertTrue(np.array_equal(a, b))
         self.assertEqual(ca, cb)
         self.assertLess(a.min(), 100, 'debe haber texto escrito')
+
+
+class MarcarTest(unittest.TestCase):
+    """Programa para marcar texto (marcar.py), manejado por código."""
+
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f'Tk no disponible: {exc}')
+        self.root.withdraw()
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.carpeta = base / 'mi_manga'
+        self.carpeta.mkdir()
+        demo = Path(V.__file__).parent.parent / 'examples' / 'demo_pagina.png'
+        for nombre in ('001.png', '002.png'):
+            shutil.copy(demo, self.carpeta / nombre)
+        for nombre, valor in (
+            ('CAJAS', base / 'cajas_texto.json'),
+            ('LOCALES', base / 'carpetas_locales.json'),
+        ):
+            parche = mock.patch.object(K, nombre, valor)
+            parche.start()
+            self.addCleanup(parche.stop)
+
+    def tearDown(self):
+        self.root.destroy()
+        self.tmp.cleanup()
+
+    def abrir(self):
+        ventana = marcar.Marcador(self.root, self.carpeta, 'Prueba')
+        ventana.dibujar()
+        return ventana
+
+    def arrastrar(self, ventana, a, b):
+        """Arrastre con el botón izquierdo entre dos puntos de la página."""
+        escala, ox, oy = ventana._vista
+
+        def evento(p):
+            return mock.Mock(x=ox + p[0] * escala, y=oy + p[1] * escala)
+
+        ventana.clic(evento(a))
+        ventana.arrastre(evento(b))
+        ventana.soltar(evento(b))
+
+    def test_propone_lo_que_encuentra_el_detector(self):
+        ventana = self.abrir()
+        self.assertTrue(ventana.cajas)
+        self.assertEqual({c['origen'] for c in ventana.cajas}, {'propuesta'})
+
+    def test_dibujar_borrar_deshacer_y_guardar(self):
+        ventana = self.abrir()
+        ventana.borrar_todas()
+        self.arrastrar(ventana, (200, 200), (500, 420))
+        self.assertEqual(len(ventana.cajas), 1)
+        c = ventana.cajas[0]
+        self.assertEqual((c['tipo'], c['origen']), ('texto', 'mano'))
+        self.assertAlmostEqual(c['x'], 200, delta=15)
+        self.assertAlmostEqual(c['w'], 300, delta=30)
+        ventana.cambiar_tipo()
+        self.assertEqual(ventana.cajas[0]['tipo'], 'ignorar')
+        ventana.deshacer()
+        self.assertEqual(ventana.cajas[0]['tipo'], 'texto')
+        ventana.pagina_lista()
+        self.assertEqual(ventana.indice, 1, 'pasa a la siguiente')
+        guardada = K.leer()['mi_manga']['paginas']['001.png']
+        self.assertTrue(guardada['completa'])
+        self.assertEqual(len(K.rectangulos(guardada, 'texto')), 1)
+        self.assertNotIn(str(self.carpeta), K.CAJAS.read_text(encoding='utf8'))
+        ventana.cambiar_pagina(-1)
+        self.assertEqual(len(ventana.cajas), 1, 'se vuelve a ver lo marcado')
+
+    def test_mover_una_caja_no_la_saca_de_la_pagina(self):
+        ventana = self.abrir()
+        ventana.borrar_todas()
+        self.arrastrar(ventana, (300, 300), (600, 600))
+        self.arrastrar(ventana, (450, 450), (5000, 5000))
+        c = ventana.cajas[0]
+        alto, ancho = ventana.imagen.shape[:2]
+        self.assertEqual((c['x'] + c['w'], c['y'] + c['h']), (ancho, alto))
+
+    def test_una_serie_reservada_no_muestra_propuestas(self):
+        ventana = self.abrir()
+        ventana.reservada.set(True)
+        ventana.cambiar_reservada()
+        self.assertEqual(ventana.cajas, [])
+        ventana.cambiar_pagina(1)
+        self.assertEqual(ventana.cajas, [])
+        ventana.pagina_lista()
+        self.assertTrue(K.leer()['mi_manga']['reservada'])
+
+    def test_una_pagina_sin_terminar_no_entra_al_entrenamiento(self):
+        ventana = self.abrir()
+        ventana.borrar_todas()
+        self.arrastrar(ventana, (200, 200), (500, 420))
+        ventana.cambiar_pagina(1)  # la primera queda como borrador
+        ventana.pagina_lista()
+        serie = K.leer()['mi_manga']
+        self.assertEqual(set(serie['paginas']), {'001.png', '002.png'})
+        self.assertEqual(set(K.completas(serie)), {'002.png'})
+        with mock.patch.object(D, 'PROPIOS', Path(self.tmp.name) / 'propios.csv'):
+            filas = D.medir_propias(avance=lambda _: None)
+        self.assertEqual({f['pagina'] for f in filas}, {'002.png'})
+        self.assertTrue(any(f['es_texto'] == '1' for f in filas))
+
+    def test_sin_las_imagenes_se_usan_las_medidas_guardadas(self):
+        ventana = self.abrir()
+        ventana.pagina_lista()
+        with mock.patch.object(D, 'PROPIOS', Path(self.tmp.name) / 'propios.csv'):
+            antes = D.medir_propias(avance=lambda _: None)
+            K.LOCALES.unlink()  # como en el equipo de otra persona
+            despues = D.medir_propias(avance=lambda _: None)
+            self.assertEqual(antes, despues)
+            with mock.patch.object(V, 'VERSION_RASGOS', 999):
+                self.assertEqual(D.medir_propias(avance=lambda _: None), [])
+
+    def test_una_carpeta_sin_imagenes_no_falla(self):
+        vacia = Path(self.tmp.name) / 'vacia'
+        vacia.mkdir()
+        ventana = marcar.Marcador(self.root, vacia, 'Prueba')
+        ventana.reservada.set(True)
+        ventana.cambiar_reservada()
+        ventana.pagina_lista()
+        ventana.cambiar_pagina(1)
+        self.assertFalse(K.CAJAS.exists(), 'no guarda una serie vacía')
+
+    def test_dos_carpetas_con_el_mismo_nombre_son_dos_series(self):
+        otra = Path(self.tmp.name) / 'otra' / 'mi_manga'
+        otra.mkdir(parents=True)
+        self.assertEqual(K.registrar_carpeta(self.carpeta), 'mi_manga')
+        self.assertEqual(K.registrar_carpeta(otra), 'mi_manga (2)')
+        self.assertEqual(K.registrar_carpeta(self.carpeta), 'mi_manga')
 
 
 if __name__ == '__main__':

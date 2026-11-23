@@ -8,3 +8,6 @@ __pycache__/
 
 # Pares de ejemplo que guarda «python -m evaluacion.sinteticos»
 pares_ejemplo/
+
+# Dónde está en este equipo cada serie marcada con «python -m evaluacion.marcar»
+evaluacion/carpetas_locales.json
