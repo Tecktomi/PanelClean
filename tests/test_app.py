@@ -108,6 +108,43 @@ class AppTest(unittest.TestCase):
         self.assertIn('window', [lienzo.type(i) for i in lienzo.find_all()])
         ventana.destroy()
 
+    # --- vistas ----------------------------------------------------------
+    def test_la_vista_no_se_recalcula_al_mover_pero_si_al_cambiar_la_mascara(self):
+        self.app.render_views()
+        base = self.app._pagina_de_vista('left')
+        self.app.zoom, self.app.panx = 3.0, 40.0
+        self.app.render_views()
+        self.assertIs(self.app._pagina_de_vista('left'), base, 'debe usar la caché')
+        self.seleccionar(0)
+        self.app.make_selected_mask()
+        con_mascara = self.app._pagina_de_vista('left')
+        self.assertIsNot(con_mascara, base)
+        r = self.app.regions[0]
+        marcada = con_mascara[r.y : r.y + r.h, r.x : r.x + r.w][r.mask > 0]
+        self.assertTrue((marcada[:, 0] > marcada[:, 2]).all(), 'la máscara va en rosa')
+        self.app.tool.set('Pintar')
+        self.app.paint_mask((r.x + 10, r.y + 10))
+        self.assertIsNot(self.app._pagina_de_vista('left'), con_mascara)
+        resultado = self.app._pagina_de_vista('right')
+        self.app.clean_selected()
+        self.assertIsNot(self.app._pagina_de_vista('right'), resultado)
+
+    def test_el_zoom_con_la_rueda_deja_fijo_el_punto_bajo_el_cursor(self):
+        self.app.render_views()
+        lienzo = self.app.view_canvases['left']
+
+        def punto_bajo(evento):
+            escala, ox, oy = self.app._mapping['left']
+            return (evento.x - ox) / escala, (evento.y - oy) / escala
+
+        evento = mock.Mock(widget=lienzo, x=70, y=35, delta=120)
+        antes = punto_bajo(evento)
+        for _ in range(4):
+            self.app.mouse_zoom(evento)
+        self.assertGreater(self.app.zoom, 1.5)
+        for a, b in zip(antes, punto_bajo(evento)):
+            self.assertAlmostEqual(a, b, places=6)
+
     # --- errores corregidos ----------------------------------------------
     def test_quitar_se_puede_deshacer(self):
         self.seleccionar(0, 1)

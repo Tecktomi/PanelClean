@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import sys
 from functools import lru_cache
@@ -53,6 +54,9 @@ C = {
 # Quicksand viene en panelclean/fuentes (licencia OFL) y se carga al iniciar;
 # si no se pudo cargar, Tk usa su fuente por defecto en su lugar.
 FAMILIA = 'Quicksand'
+# Las máscaras se ven en rosa semitransparente sobre la vista ORIGINAL (alfa ≈ 40 %).
+ROSA_MASCARA = np.array([255, 71, 100], np.float32)
+ALFA_MASCARA = 104 / 255
 
 
 def fuente(tam: int = 10, negrita: bool = False) -> tuple:
@@ -279,6 +283,7 @@ class PanelCleanApp:
         self.zoom = 1.0
         self.panx, self.pany = 0.0, 0.0
         self._preview_img = {}
+        self._vistas = {}  # caché de _pagina_de_vista
         self._mapping = {}
         self._drag_start = None
         self._brush_active = False
@@ -706,8 +711,8 @@ class PanelCleanApp:
             cv.bind('<ButtonPress-3>', self.pan_start)
             cv.bind('<B3-Motion>', self.pan_move)
             cv.bind('<MouseWheel>', self.mouse_zoom)
-            cv.bind('<Button-4>', lambda e: self.adjust_zoom(1.12))
-            cv.bind('<Button-5>', lambda e: self.adjust_zoom(1 / 1.12))
+            cv.bind('<Button-4>', lambda e: self.adjust_zoom(1.12, e))
+            cv.bind('<Button-5>', lambda e: self.adjust_zoom(1 / 1.12, e))
             if key == 'left':
                 cv.bind('<ButtonPress-1>', self.left_down)
                 cv.bind('<B1-Motion>', self.left_move)
@@ -1374,27 +1379,56 @@ class PanelCleanApp:
         self.zoom = 1.0
         self.render_views()
 
-    def adjust_zoom(self, factor):
-        """Multiplica el zoom por factor, manteniéndolo entre 0,65× y 6×."""
-        self.zoom = max(0.65, min(6.0, self.zoom * factor))
+    def adjust_zoom(self, factor, event=None):
+        """Multiplica el zoom por factor, manteniéndolo entre 0,65× y 8×.
+
+        Si se entrega el evento del ratón, el punto de la página bajo el cursor
+        queda fijo (se acerca hacia donde apunta el ratón); si no, hacia el centro.
+        """
+        nuevo = max(0.65, min(8.0, self.zoom * factor))
+        if event is not None and self.original is not None:
+            key = 'left' if event.widget is self.view_canvases['left'] else 'right'
+            scale, ox, oy = self._mapping.get(key, (0, 0, 0))
+            if scale > 0:
+                # Punto de la página bajo el cursor, antes del zoom.
+                px, py = (event.x - ox) / scale, (event.y - oy) / scale
+                canvas = event.widget
+                w, h = max(canvas.winfo_width(), 100), max(canvas.winfo_height(), 100)
+                ih, iw = self.original.shape[:2]
+                nueva = scale * nuevo / self.zoom
+                # Desplazamiento que deja ese punto otra vez bajo el cursor.
+                self.panx = event.x - px * nueva - (w - iw * nueva) / 2
+                self.pany = event.y - py * nueva - (h - ih * nueva) / 2
+        self.zoom = nuevo
         self.render_views()
 
     def mouse_zoom(self, event):
-        """Acerca o aleja con la rueda del ratón (Windows y macOS; Linux usa los botones 4 y 5)."""
-        self.adjust_zoom(1.13 if event.delta > 0 else 1 / 1.13)
+        """Acerca o aleja con la rueda del ratón, hacia el punto bajo el cursor
+        (Windows y macOS; Linux usa los botones 4 y 5)."""
+        self.adjust_zoom(1.13 if event.delta > 0 else 1 / 1.13, event)
 
     def pan_start(self, event):
         """Guarda el punto donde empieza el desplazamiento con el botón derecho."""
         self._pan_anchor = (event.x, event.y)
 
     def pan_move(self, event):
-        """Desplaza ambas vistas siguiendo el ratón."""
-        if self._pan_anchor is None:
+        """Desplaza ambas vistas siguiendo el ratón.
+
+        Lo ya dibujado se mueve al instante; el redibujo (que completa los bordes que
+        quedan a la vista) se agrupa para no hacerlo en cada evento del ratón.
+        """
+        if self._pan_anchor is None or self.original is None:
             return
         ax, ay = self._pan_anchor
-        self.panx += event.x - ax
-        self.pany += event.y - ay
+        dx, dy = event.x - ax, event.y - ay
+        self.panx += dx
+        self.pany += dy
         self._pan_anchor = (event.x, event.y)
+        for key, canvas in self.view_canvases.items():
+            canvas.move('all', dx, dy)
+            if key in self._mapping:
+                scale, ox, oy = self._mapping[key]
+                self._mapping[key] = (scale, ox + dx, oy + dy)
         self._schedule_render(15)
 
     def _schedule_render(self, delay=120):
@@ -1409,9 +1443,71 @@ class PanelCleanApp:
         self._render_job = None
         self.render_views()
 
+    def _pagina_de_vista(self, key):
+        """Página que muestra una vista, en RGB y a tamaño real; la izquierda lleva
+        encima las máscaras en rosa.
+
+        Se guarda en caché y solo se recalcula cuando cambia lo que muestra (otra
+        página, otro resultado u otras máscaras), no al acercar ni desplazar la vista.
+        La firma usa los id() de los arreglos: la caché los mantiene vivos, así un id
+        no se puede repetir mientras siga guardado, y ni el resultado ni las máscaras
+        se modifican en el lugar (siempre se reemplazan por un arreglo nuevo).
+        """
+        if key == 'right':
+            fuentes = (self.working,)
+            firma = (id(self.working),)
+        else:
+            con_mascara = (
+                [r for r in self.regions if r.mask is not None]
+                if self.show_masks.get()
+                else []
+            )
+            fuentes = (self.original, *[r.mask for r in con_mascara])
+            firma = (id(self.original),) + tuple(
+                (id(r.mask), r.x, r.y) for r in con_mascara
+            )
+        guardada = self._vistas.get(key)
+        if guardada is not None and guardada[0] == firma:
+            return guardada[2]
+        pagina = cv2.cvtColor(fuentes[0], cv2.COLOR_BGR2RGB)
+        if key == 'left':
+            for r in con_mascara:
+                zona = pagina[r.y : r.y + r.h, r.x : r.x + r.w]
+                marcada = r.mask > 0
+                zona[marcada] = (
+                    zona[marcada] * (1 - ALFA_MASCARA) + ROSA_MASCARA * ALFA_MASCARA
+                ).astype(np.uint8)
+        self._vistas[key] = (firma, fuentes, pagina, {})
+        return pagina
+
+    def _copia_reducida(self, key, pagina, scale):
+        """Copia de la página ya achicada a la mitad, un cuarto, etc., para que al ver
+        la hoja entera no haya que promediar millones de píxeles en cada redibujo.
+
+        Devuelve la copia y la escala que lleva de ella a la pantalla. Las copias se
+        guardan junto a la página en la caché de _pagina_de_vista.
+        """
+        factor = 1
+        while scale * factor * 2 <= 1:
+            factor *= 2
+        if factor == 1:
+            return pagina, scale
+        copias = self._vistas[key][3]
+        if factor not in copias:
+            ih, iw = pagina.shape[:2]
+            copias[factor] = cv2.resize(
+                pagina,
+                (max(1, iw // factor), max(1, ih // factor)),
+                interpolation=cv2.INTER_AREA,
+            )
+        copia = copias[factor]
+        return copia, scale * pagina.shape[1] / copia.shape[1]
+
     def render_views(self):
         """Dibuja la página original (con máscaras y rectángulos) y el resultado.
 
+        Solo se escala la parte de la página que cabe en la vista: con zoom, escalar la
+        página entera en cada movimiento era lo que hacía lento el desplazamiento.
         Guarda en _mapping la escala y el desplazamiento de cada vista, que
         _to_image_xy usa para convertir clics a coordenadas de la imagen.
         Sin ninguna página abierta, muestra el botón «Agregar imagen».
@@ -1419,38 +1515,46 @@ class PanelCleanApp:
         if self.original is None:
             self._render_sin_imagen()
             return
-        for key, image in [('left', self.original), ('right', self.working)]:
-            if image is None:
-                continue
+        for key in ('left', 'right'):
+            pagina = self._pagina_de_vista(key)
             canvas = self.view_canvases[key]
             w, h = max(canvas.winfo_width(), 100), max(canvas.winfo_height(), 100)
-            ih, iw = image.shape[:2]
+            ih, iw = pagina.shape[:2]
             # Escala que hace caber la página en la vista (con 11 px de margen por
             # lado), multiplicada por el zoom; luego se centra y se suma el desplazamiento.
             scale = min((w - 22) / iw, (h - 22) / ih) * self.zoom
-            tw, th = max(1, int(iw * scale)), max(1, int(ih * scale))
-            ox = (w - tw) / 2 + self.panx
-            oy = (h - th) / 2 + self.pany
+            ox = (w - iw * scale) / 2 + self.panx
+            oy = (h - ih * scale) / 2 + self.pany
             self._mapping[key] = (scale, ox, oy)
-            pic = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)).convert(
-                'RGBA'
-            )
-            if key == 'left' and self.show_masks.get():
-                # Máscaras en rosa semitransparente (alfa 104 de 255, cerca de 40 %).
-                overlay = Image.new('RGBA', pic.size, (0, 0, 0, 0))
-                for r in self.regions:
-                    if r.mask is not None:
-                        alpha = Image.fromarray(
-                            (r.mask > 0).astype(np.uint8) * 104, 'L'
-                        )
-                        tint = Image.new('RGBA', (r.w, r.h), (255, 71, 100, 0))
-                        tint.putalpha(alpha)
-                        overlay.alpha_composite(tint, (r.x, r.y))
-                pic = Image.alpha_composite(pic, overlay)
-            picture = pic.resize((tw, th), Image.Resampling.LANCZOS)
-            self._preview_img[key] = ImageTk.PhotoImage(picture, master=self.root)
             canvas.delete('all')
-            canvas.create_image(ox, oy, image=self._preview_img[key], anchor='nw')
+            fuente_px, escala_px = self._copia_reducida(key, pagina, scale)
+            sh, sw = fuente_px.shape[:2]
+            # Parte visible de la página, en píxeles de la copia que se escala.
+            x0, y0 = max(0, int(-ox / escala_px)), max(0, int(-oy / escala_px))
+            x1 = min(sw, int(math.ceil((w - ox) / escala_px)))
+            y1 = min(sh, int(math.ceil((h - oy) / escala_px)))
+            if x1 > x0 and y1 > y0:
+                tamano = (
+                    max(1, round((x1 - x0) * escala_px)),
+                    max(1, round((y1 - y0) * escala_px)),
+                )
+                visible = cv2.resize(
+                    fuente_px[y0:y1, x0:x1],
+                    tamano,
+                    # INTER_AREA promedia al achicar (sin dientes de sierra).
+                    interpolation=(
+                        cv2.INTER_AREA if escala_px < 1 else cv2.INTER_CUBIC
+                    ),
+                )
+                self._preview_img[key] = ImageTk.PhotoImage(
+                    Image.fromarray(visible), master=self.root
+                )
+                canvas.create_image(
+                    round(ox + x0 * escala_px),
+                    round(oy + y0 * escala_px),
+                    image=self._preview_img[key],
+                    anchor='nw',
+                )
             if key == 'left':
                 for i, r in enumerate(self.regions):
                     selected = i in self.selected_indices
