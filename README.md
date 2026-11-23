@@ -32,17 +32,18 @@ En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
 El [manual](MANUAL.md) explica cada control, cómo corregir la máscara y qué hacer si algo falla. En resumen:
 
-1. `Agregar imagen` (o `Abrir imagen`) para cargar una página, o `Ejemplo` para practicar con la imagen incluida.
-2. En la vista Original, arrastra un rectángulo ajustado alrededor de las letras que quieres limpiar.
-3. Puedes seleccionar varias regiones.
-4. Pulsa `Crear máscaras` y revisa la zona marcada en rosa.
-5. Pulsa `Limpiar selección`.
-6. Compara el resultado y usa `Deshacer` si es necesario.
-7. Pulsa `Exportar` para guardar la página limpia.
+1. `Agregar hojas` (o `Abrir hojas`) para cargar una o varias páginas, o `Ejemplo` para practicar con la imagen incluida.
+2. En la vista Original, encierra cada globo a grandes rasgos: con `Ajustar al texto` (activado por defecto) se crea una región ajustada a cada bloque de texto.
+3. Pulsa `Crear máscaras` y revisa la zona marcada en rosa.
+4. Pulsa `Limpiar selección`.
+5. Compara el resultado y usa `Deshacer` si es necesario.
+6. Pulsa `Exportar` para guardar la página limpia.
+
+Con varias hojas abiertas aparece una tira de miniaturas: marca el texto de cada hoja, pulsa `Procesar todas` para limpiarlas una tras otra y `Exportar todas` para guardarlas en una carpeta.
 
 ## Estado de la beta
 
-La versión actual cubre el flujo completo. Todavía puede fallar con texto sobre dibujo o fondos muy complejos, y no detecta letras blancas sobre fondo negro. Por eso la máscara se muestra antes de aplicar la limpieza, existe corrección manual y el modo automático deja para revisión los casos dudosos. Las limitaciones medidas están en la sección 9 del [manual](MANUAL.md) y en los [resultados de la evaluación](evaluacion/resultados/resumen.md).
+La versión actual cubre el flujo completo. Todavía puede fallar con texto sobre dibujo o fondos muy complejos, y no detecta letras blancas sobre fondo negro. Por eso la máscara se muestra antes de aplicar la limpieza, existe corrección manual y el modo automático deja para revisión los casos dudosos. Las limitaciones medidas están en la sección 10 del [manual](MANUAL.md) y en los [resultados de la evaluación](evaluacion/resultados/resumen.md).
 
 ## Estructura del repositorio
 
@@ -68,7 +69,7 @@ Las pruebas están en `tests/` y usan solo la biblioteca estándar de Python. Co
 .venv/bin/python -m unittest discover tests          # Linux
 ```
 
-Comprueban, entre otras cosas, que la limpieza no modifique ningún píxel fuera de la máscara, que cada tipo de fondo se clasifique bien, que una viñeta entera no se limpie sola y que «Quitar» y «Deshacer» funcionen juntos.
+Comprueban, entre otras cosas, que la limpieza no modifique ningún píxel fuera de la máscara, que cada tipo de fondo se clasifique bien, que una viñeta entera no se limpie sola, que una zona holgada se ajuste al texto, que cada hoja de la cola conserve sus regiones y que «Quitar» y «Deshacer» funcionen juntos.
 
 ## Evaluación
 
