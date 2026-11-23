@@ -17,7 +17,7 @@ Tarda alrededor de un minuto en un portátil. Con `--rapido` corre una versión 
 
 | # | Métrica | Tarea | Datos | Definición | Meta (Hito 1) |
 |---|---|---|---|---|---|
-| 1 | Detección: precisión, recall, F1 | T1.2.3 | OpenMantra, 214 páginas | Una caja de texto está acertada si ≥ 80 % de su área queda dentro de una región detectada; una detección es correcta si contiene así algún texto. Se informa también el F1 estándar (uno a uno, IoU ≥ 0,5), y cuánto dibujo borraría el modo automático si se limpiaran todas las detecciones sin revisarlas | F1 ≥ 0,85 |
+| 1 | Detección: precisión, recall, F1 | T1.2.3, T1.2.6 | OpenMantra, 214 páginas; series propias marcadas a mano | Criterio actual: una región acierta un texto si su centro cae en la caja anotada y no mide más de 3 veces esa caja. Se informa también el criterio original (cubrir el 80 % de la caja), el detector anterior (`detect_bubbles`) con los dos, cuánto dibujo borraría el modo automático, y qué pasa con escaneos distintos y con los clics del usuario | F1 ≥ 0,85 |
 | 2 | Máscara: IoU, Dice, cobertura, exceso | T1.4.2 | 150 pares sintéticos | Contra los píxeles que el texto cambió respecto del fondo limpio, con los ajustes por defecto de la aplicación | IoU ≥ 0,80 |
 | 3 | Selector: exactitud, macro-F1, matriz de confusión | T2.4.4 | Sintéticos (clase por construcción) y regiones reales etiquetadas | Regla de entropía, tono oscuro y textura (`classify_background`), sin el aviso «Revisar máscara». En reales se informa la validación cruzada por obra | Macro-F1 ≥ 0,80 |
 | 4 | Limpieza: MAE, PSNR, SSIM | T2.4.1 | Sintéticos | Salida vs. fondo limpio, en gris, dentro de la selección | Sin meta |
@@ -36,7 +36,9 @@ Tarda alrededor de un minuto en un portátil. Con `--rapido` corre una versión 
 
 Son 50 pares por clase, siempre los mismos (semilla 2026). Las frases salen de las anotaciones de OpenMantra y la fuente es Noto Sans JP Bold. Una parte del texto lleva contorno blanco, como el que se usa sobre dibujo. La **referencia** son los píxeles cuya diferencia con el fondo limpio supera 8 niveles de gris; la **selección** es el rectángulo del texto más 10 px, como un rectángulo ajustado hecho por el usuario.
 
-**OpenMantra** (`datasets/open-mantra`). Detección, rendimiento y selector con regiones reales. La obra `tencho_isoro` está reservada como conjunto de prueba: si más adelante se ajusta o entrena algo, no se usa para eso.
+**OpenMantra** (`datasets/open-mantra`). Detección, rendimiento y selector con regiones reales. La obra `tencho_isoro` está reservada: no se entrena ni se calculan umbrales con ella. Pero **no es una prueba a ciegas**: durante el desarrollo del detector y de «Ajustar al texto» se consultó varias veces, para mirar errores y comparar alternativas (por ejemplo, con ella se descartó usar el buscador en toda la página sin filtro). Además es del mismo conjunto que las demás obras, en japonés.
+
+**Series propias** (`cajas_texto.json`). Páginas de otros estilos o idiomas marcadas con `marcar.py`. Las que se marcan como reservadas son la única prueba a ciegas del detector: no se usan para entrenar ni para elegir nada.
 
 ## Decisiones de diseño
 
@@ -44,9 +46,10 @@ Son 50 pares por clase, siempre los mismos (semilla 2026). Las frases salen de l
 - **Tres métricas para la hipótesis.** El MAE favorece por construcción el relleno con la mediana (la mediana minimiza el error absoluto) aunque borre la textura; el SSIM sí mide si la textura se conserva.
 - **Adaptativo comparable en todos los pares.** La aplicación deja los fondos complejos para revisión manual. Para comparar en los mismos pares, el adaptativo usa Relleno local si el fondo se clasifica como Uniforme y Telea en otro caso. Aparte se informa cuántos pares deja la aplicación para revisión.
 - **Piso y techo.** *Sin limpiar* es el piso; el *oráculo por par* (el mejor método único en cada par) es el techo de cualquier selector.
-- **Selector calibrado sin mirar la prueba.** La regla mide el fondo en una franja de hasta 14 px alrededor de las letras: la *entropía* del histograma separa el papel liso del resto, y el *tono oscuro* (percentil 10) separa el dibujo, que tiene tinta casi negra, de la trama o el degradado, que no la tienen. Una tercera medida, la *textura repartida* (fracción de la franja que varía en ventanas de 7 × 7 px), evita confundir con papel una trama rala que cubre toda la franja. Los umbrales se calculan con `calibrar_selector.py` a partir de pares sintéticos de desarrollo (semilla 7) y de las regiones reales etiquetadas, sin la obra de prueba. Como las regiones reales sirven para ajustar y para medir, el valor que cuenta es la validación cruzada por obra: se ajusta sin una obra y se mide en ella. La varianza y la densidad de bordes de la regla anterior se descartaron porque en manga real las tramas son finas y de poco contraste: la regla las tomaba por papel liso y, en los sintéticos, tomaba las tramas por dibujo.
-- **Zona aproximada sin mirar la prueba.** `texto_en_zona` toma como letras lo oscuro que el papel blanco de un globo rodea por completo, así el fondo negro o la trama de alrededor no desvían el umbral. Sus parámetros se ajustaron con zonas simuladas de las cuatro obras de desarrollo. La obra de prueba se midió una vez con la primera versión; después se agregó, por la página de ejemplo, el descarte de tramas y de contornos de globo, y se volvió a medir. Como las cajas de OpenMantra son holgadas, no sirve medir el IoU contra ellas: la referencia son las letras que da la máscara de la caja anotada.
-- **Detección por cobertura.** Para limpiar, lo que importa es que el texto quede dentro de la región; el IoU castiga que el globo detectado sea más grande que el texto. Por eso el criterio principal es la cobertura, y el IoU ≥ 0,5 se informa como referencia.
+- **Selector calibrado sin la obra reservada.** La regla mide el fondo en una franja de hasta 14 px alrededor de las letras: la *entropía* del histograma separa el papel liso del resto, y el *tono oscuro* (percentil 10) separa el dibujo, que tiene tinta casi negra, de la trama o el degradado, que no la tienen. Una tercera medida, la *textura repartida* (fracción de la franja que varía en ventanas de 7 × 7 px), evita confundir con papel una trama rala que cubre toda la franja. Los umbrales se calculan con `calibrar_selector.py` a partir de pares sintéticos de desarrollo (semilla 7) y de las regiones reales etiquetadas, sin la obra de prueba. Como las regiones reales sirven para ajustar y para medir, el valor que cuenta es la validación cruzada por obra: se ajusta sin una obra y se mide en ella. La varianza y la densidad de bordes de la regla anterior se descartaron porque en manga real las tramas son finas y de poco contraste: la regla las tomaba por papel liso y, en los sintéticos, tomaba las tramas por dibujo.
+- **Zona aproximada.** `texto_en_zona` toma como letras lo oscuro que el papel blanco de un globo rodea por completo, así el fondo negro o la trama de alrededor no desvían el umbral. Sus parámetros se ajustaron con zonas simuladas de las cuatro obras de desarrollo. La obra reservada se miró más de una vez: con la primera versión, para ver qué eran sus bloques falsos, para probar una regla que se descartó, y con la versión final (el descarte de tramas y contornos de globo salió de la página de ejemplo). Desde el 23/11 la página se prepara antes de buscar (tono de papel y tamaño comunes) y hay topes al tamaño de letra y de bloque. Como las cajas de OpenMantra son holgadas, no sirve medir el IoU contra ellas: la referencia son las letras que da la máscara de la caja anotada.
+- **Detector entrenado.** `entrenar_detector.py` toma como candidatos los bloques de texto de cada página, les mide 17 rasgos (grosor y regularidad del trazo, columnas o renglones, papel alrededor, si están en un globo…) y entrena un random forest de OpenCV (`cv2.ml.RTrees`, 30 árboles de profundidad 7). Un candidato es texto si corresponde a una caja (`cajas.texto_del_candidato`): una región gigante no lo es aunque su centro caiga en un texto. Cada obra de desarrollo se mide con un modelo entrenado sin ella. La obra reservada no se usa para entrenar, pero se midió con varias versiones del detector, así que su resultado es solo orientativo. Las páginas se usan también traspuestas y con los globos traducidos en renglones (`horizontales.py`), y los rasgos no dependen de la orientación, para que el modelo no aprenda solo columnas verticales. Los umbrales (proponer desde 0,3, limpiar desde 0,5) y el tamaño del bosque se eligieron con la validación cruzada.
+- **Dos criterios para la detección.** Hasta el 23/11 una región debía cubrir el 80 % de la caja anotada. Las cajas de OpenMantra son más holgadas que las letras, así que una región ajustada a ellas casi nunca lo cumplía. El criterio actual mira el centro y pone un tope al tamaño, porque con el centro solo una región de media hoja podía contar como acierto. El cambio favorece al detector actual; por eso se informan los dos, y los dos se aplican también al detector anterior.
 - **Sin dependencias nuevas.** El SSIM está programado con OpenCV según Wang et al. (2004); las métricas tienen pruebas en `tests/test_evaluacion.py`.
 
 ## Etiquetar regiones reales (selector)
@@ -71,6 +74,23 @@ Se abre una ventana con una región por vez. La pregunta es **qué hay detrás d
 
 **Por qué no salen al azar.** En OpenMantra casi todo el texto está en globos blancos: en 107 regiones mostradas al azar, 103 eran lisas. Para no tener que revisar el dataset entero, `muestreo.py` reparte las 1592 regiones en 4 estratos según cuántos grises intermedios (ni tinta ni papel) hay dentro de la caja, y muestra más seguido las del estrato más cargado. Dentro de cada estrato el orden es al azar. La evaluación pondera cada región por N_h / n_h (regiones del estrato en todo el dataset ÷ regiones etiquetadas de ese estrato), así el resultado estima el desempeño en todo OpenMantra y no solo en las regiones mostradas.
 
+## Marcar páginas propias (detector de texto)
+
+El detector aprendió con OpenMantra, que es manga en japonés. Para enseñarle otros estilos o idiomas, y para saber de verdad cómo le va en ellos, se marca dónde está el texto en páginas propias:
+
+```bash
+MARCAR_WINDOWS.bat                                   # Windows (o arrastrar encima la carpeta de una serie)
+.venv/bin/python -m evaluacion.marcar ruta/a/la/serie    # Linux
+```
+
+- Una carpeta por serie. En cada página, un rectángulo por bloque de texto, ajustado a las letras. El detector propone los suyos para partir de ahí.
+- **Todo** el texto de la página: lo que queda sin marcar en una página lista se aprende como «no texto». Las onomatopeyas y letreros que son parte del dibujo se marcan como «ignorar» y no cuentan para ningún lado.
+- **Reservar al menos una serie** (casilla de la ventana) antes de marcarla: no se entrena con ella y no muestra propuestas, porque una referencia que parte de lo que encontró el detector lo favorece. Es la medida que vale para otros idiomas.
+- Conviene marcar pocas páginas de varias series antes que muchas de una sola.
+- Las imágenes no se copian ni se suben: `cajas_texto.json` guarda solo las cajas, y `carpetas_locales.json` (fuera del repositorio) dónde está cada serie en ese equipo.
+
+Al cerrar, la ventana ofrece entrenar (`python -m evaluacion.entrenar_detector`). El informe muestra, por serie, los **candidatos** (qué parte del texto llega a proponerse: si es bajo, entrenar no lo arregla) y la precisión, el recall y el F1 sin haber visto esa serie.
+
 ## Archivos
 
 | Archivo | Contenido |
@@ -81,6 +101,12 @@ Se abre una ventana con una región por vez. La pregunta es **qué hay detrás d
 | `calibrar_selector.py` | Calcula los umbrales del selector y su validación cruzada por obra (`python -m evaluacion.calibrar_selector`) |
 | `etiquetar.py` | Ventana para etiquetar regiones reales |
 | `muestreo.py` | Estratos, orden de etiquetado y pesos |
+| `entrenar_detector.py` | Arma los candidatos, mide el detector con validación cruzada por obra y guarda el modelo |
+| `horizontales.py` | Páginas de OpenMantra con los globos traducidos en renglones (datos de entrenamiento simulados) |
+| `marcar.py`, `cajas.py` | Programa para marcar el texto de páginas propias, y el formato en que se guarda |
+| `candidatos.csv` | Candidatos de OpenMantra con sus medidas y si son texto (se genera solo) |
+| `cajas_texto.json` | Cajas de texto marcadas en páginas propias (sin imágenes) |
+| `candidatos_propios.csv` | Candidatos de las páginas propias con sus medidas, para entrenar sin las imágenes |
 | `estratos.csv` | Medida y estrato de cada caja de texto de OpenMantra (se genera solo) |
 | `etiquetas.csv` | Etiquetas hechas a mano: región, clase y quién la etiquetó |
 | `resultados/resumen.md` | Tablas listas para el informe |

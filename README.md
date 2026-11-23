@@ -33,13 +33,13 @@ En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 El [manual](MANUAL.md) explica cada control, cómo corregir la máscara y qué hacer si algo falla. En resumen:
 
 1. `Agregar hojas` (o `Abrir hojas`) para cargar una o varias páginas, o `Ejemplo` para practicar con la imagen incluida.
-2. En la vista Original, encierra cada globo a grandes rasgos: con `Ajustar al texto` (activado por defecto) se crea una región ajustada a cada bloque de texto.
+2. Pulsa `Detectar texto` para encontrar el texto de la página: lo dudoso queda en naranja y no se limpia solo. Para agregar un globo que falte, haz clic sobre él o enciérralo a grandes rasgos (con `Ajustar al texto` la región se ajusta sola a las letras).
 3. Pulsa `Crear máscaras` y revisa la zona marcada en rosa.
 4. Pulsa `Limpiar selección`.
 5. Compara el resultado y usa `Deshacer` si es necesario.
 6. Pulsa `Exportar` para guardar la página limpia.
 
-Con varias hojas abiertas aparece una tira de miniaturas: marca el texto de cada hoja, pulsa `Procesar todas` para limpiarlas una tras otra y `Exportar todas` para guardarlas en una carpeta.
+Con varias hojas abiertas aparece una tira de miniaturas: `Procesar todas` detecta y limpia el texto de cada hoja, una tras otra, y `Exportar todas` las guarda en una carpeta.
 
 ## Estado de la beta
 
@@ -51,10 +51,11 @@ La versión actual cubre el flujo completo. Todavía puede fallar con texto sobr
 |---|---|
 | `INICIAR_WINDOWS.bat`, `INICIAR_LINUX.sh` | Lanzadores: instalan lo necesario la primera vez y abren la aplicación |
 | `main.py`, `requirements.txt` | Punto de entrada y dependencias (NumPy, OpenCV, Pillow) |
-| `panelclean/` | La aplicación: `vision.py` (máscara, clasificación del fondo y limpieza) y `app.py` (interfaz) |
+| `panelclean/` | La aplicación: `vision.py` (detección de texto, máscara, clasificación del fondo y limpieza), `app.py` (interfaz) y `modelo_texto.yml` (el detector entrenado) |
 | `tests/` | Pruebas automáticas |
 | `evaluacion/` | Evaluación de las metas del Hito 1, con sus resultados en `evaluacion/resultados/` ([detalle](evaluacion/README.md)) |
 | `ETIQUETAR_WINDOWS.bat` | Abre la herramienta para etiquetar el fondo de regiones reales (la usa la evaluación) |
+| `MARCAR_WINDOWS.bat` | Abre el programa para marcar dónde hay texto en páginas propias: le enseña al detector otros estilos e idiomas y mide cómo le va en ellos |
 | `examples/` | Página de ejemplo que abre el botón `Ejemplo` |
 | `datasets/open-mantra/` | Páginas de manga reales usadas en la evaluación ([créditos](datasets/README.md)) |
 | `docs/` | Entregas del curso (presentación del Hito 1, informe del Hito 2), el manual en PDF y sus capturas |
@@ -73,7 +74,7 @@ Comprueban, entre otras cosas, que la limpieza no modifique ningún píxel fuera
 
 ## Evaluación
 
-La carpeta `evaluacion/` mide las metas del Hito 1: detección, máscara, selector, limpieza, conservación, tiempo por página y la hipótesis de que limpiar de forma adaptativa supera a un método único. Usa pares sintéticos (fondo limpio + texto japonés) y las páginas de OpenMantra.
+La carpeta `evaluacion/` entrena el detector de texto (`python -m evaluacion.entrenar_detector`) y mide las metas del Hito 1: detección, máscara, selector, limpieza, conservación, tiempo por página y la hipótesis de que limpiar de forma adaptativa supera a un método único. Usa pares sintéticos (fondo limpio + texto japonés) y las páginas de OpenMantra.
 
 ```bash
 .venv\Scripts\python -m evaluacion.evaluar      # Windows

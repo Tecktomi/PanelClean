@@ -1,6 +1,6 @@
 # Manual de instalación y usuario · PanelClean 0.3.1-beta
 
-PanelClean es una aplicación de escritorio para borrar el texto de los globos de manga y reconstruir el fondo que había detrás. Tú encierras los globos a grandes rasgos; la aplicación encuentra las letras, las separa del dibujo (la *máscara*), reconoce qué tipo de fondo hay detrás y elige cómo rellenarlo. Antes de guardar puedes revisar, corregir y deshacer todo.
+PanelClean es una aplicación de escritorio para borrar el texto de los globos de manga y reconstruir el fondo que había detrás. La aplicación encuentra el texto de la página (o tú le indicas dónde está con un clic o un rectángulo), separa las letras del dibujo (la *máscara*), reconoce qué tipo de fondo hay detrás y elige cómo rellenarlo. Antes de guardar puedes revisar, corregir y deshacer todo.
 
 Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026).
 
@@ -12,7 +12,7 @@ Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026).
 4. [Limpiar una página paso a paso](#4-limpiar-una-página-paso-a-paso)
 5. [Cuando la máscara falla](#5-cuando-la-máscara-falla)
 6. [Varias hojas a la vez](#6-varias-hojas-a-la-vez)
-7. [Detectar globos (experimental)](#7-detectar-globos-experimental)
+7. [Detectar texto](#7-detectar-texto)
 8. [Ajustes avanzados](#8-ajustes-avanzados)
 9. [Atajos de teclado y ratón](#9-atajos-de-teclado-y-ratón)
 10. [Limitaciones conocidas](#10-limitaciones-conocidas)
@@ -75,13 +75,13 @@ El lanzador avisa si falta algo y dice cómo instalarlo. Nota: el lanzador de Li
 | # | Parte | Para qué sirve |
 |---|---|---|
 | 1 | Barra superior | **Ejemplo** abre la página incluida para practicar; **Abrir hojas** abre una o varias páginas tuyas; **Exportar** guarda el resultado de la hoja abierta |
-| 2 | Regiones | Lista de los rectángulos marcados (✓ = ya limpiada · • = tiene máscara); si no caben, la lista se desplaza. **Quitar** borra la región elegida, **Quitar todo** las borra todas y **Crear máscaras** analiza las elegidas |
+| 2 | Regiones | **Detectar texto** busca el texto de toda la página (sección 7). Debajo, la lista de los rectángulos marcados (✓ = ya limpiada · • = tiene máscara); si no caben, la lista se desplaza. **Quitar** borra la región elegida, **Quitar todo** las borra todas y **Crear máscaras** analiza las elegidas |
 | 3 | Edición | Herramienta activa: **Seleccionar** (marcar regiones), **Añadir máscara** y **Borrar máscara** (pincel). **Ver máscara** muestra u oculta el rosa. Con **Ajustar al texto**, el rectángulo que arrastras se ajusta solo a las letras (paso 2) |
 | 4 | Ajustes avanzados | Afinan cómo se crea la máscara y el tamaño del pincel (sección 8) |
 | 5 | Vista ORIGINAL | La página sin cambios. Aquí se marcan las letras y se ve la máscara en rosa |
 | 6 | Vista RESULTADO | La página con las limpiezas aplicadas |
 | 7 | Navegación | Rueda del ratón: zoom en ambas vistas a la vez, hacia el punto bajo el cursor · clic derecho y arrastrar: mover · **Ajustar vista**: volver a ver la página completa |
-| 8 | Selección | Datos de la región elegida: clase de fondo y las medidas con que se decidió |
+| 8 | Selección | Datos de la región elegida: clase de fondo, las medidas con que se decidió y, si la propuso el detector, qué tan seguro está de que es texto |
 | 9 | Limpieza | **Método**, **Radio de inpainting** y los botones **Limpiar selección**, **Limpiar todas** y **Deshacer** |
 | 10 | Estado | Qué acaba de pasar y qué conviene hacer después. Se repite en la barra inferior |
 
@@ -97,11 +97,17 @@ Pulsa **Agregar hojas** (en el centro, mientras no hay ninguna página abierta) 
 
 ### Paso 2 · Marcar el texto
 
+Hay tres formas, y se pueden combinar:
+
+- **Detectar texto** (panel Regiones) busca el texto de toda la página. Las regiones de las que no está seguro quedan en naranja y no se limpian solas (sección 7).
+- **Un clic sobre un globo**, en cualquier parte de su papel y fuera de las regiones, marca un punto: PanelClean agrega el texto de ese globo. Un segundo clic sobre una región naranja confirma que es texto.
+- **Encerrar el globo** con un rectángulo, como se explica a continuación.
+
 Con la herramienta **Seleccionar** y la casilla **Ajustar al texto** marcada (viene así), arrastra en la vista ORIGINAL un rectángulo **a grandes rasgos** alrededor del globo: puede incluir el contorno, el fondo de alrededor e incluso varios globos. PanelClean busca las letras dentro de esa zona y crea una región ajustada a cada bloque de texto. Cada región se llama R01, R02…; si quitas una, su número queda libre para la siguiente.
 
 ![Las regiones que quedaron al encerrar cada globo a grandes rasgos](docs/manual/regiones.png)
 
-Para encontrar las letras, PanelClean busca lo oscuro que el papel blanco del globo rodea por completo; por eso no lo confunden ni el fondo negro ni la trama de alrededor. Si no encuentra texto en un globo blanco (por ejemplo, texto escrito sobre el dibujo o en un globo gris), usa el rectángulo tal como lo marcaste y lo avisa en la barra de estado. En ese caso, o si desmarcas **Ajustar al texto**, el rectángulo debe quedar **ajustado a las letras**, sin el contorno del globo.
+Para encontrar las letras, PanelClean busca lo oscuro que el papel del globo rodea por completo; por eso no lo confunden ni el fondo negro ni la trama de alrededor. Antes lleva el papel de la página a un mismo tono, así también funciona con escaneos grises, amarillentos o lavados. Si no encuentra texto (por ejemplo, porque está escrito sobre el dibujo), usa el rectángulo tal como lo marcaste y lo avisa en la barra de estado; si el rectángulo es muy grande para ser solo texto, no crea ninguna región. En ese caso, o si desmarcas **Ajustar al texto**, el rectángulo debe quedar **ajustado a las letras**, sin el contorno del globo.
 
 - Un clic sobre una región la elige; `Ctrl + clic` la suma o la quita de la selección. En la lista, `Ctrl` o `Shift + clic` eligen varias.
 - Las regiones elegidas se ven en rosa cerezo; las demás, en malva.
@@ -188,7 +194,7 @@ Si después de limpiar quedan motas sueltas, como aquí junto a la «っ», un t
 
 Para limpiar un capítulo, abre todas sus páginas juntas: en el diálogo de **Abrir hojas**, elige varias con `Ctrl` o `Shift + clic`. Quedan en una cola, que se ve como una tira de miniaturas bajo las vistas:
 
-![Cola de cuatro hojas ya procesadas: dos listas y dos por revisar](docs/manual/cola.png)
+![Cola de cuatro hojas ya procesadas: tres listas y una por revisar](docs/manual/cola.png)
 
 - **Pasar de una hoja a otra:** clic en su miniatura, o `Re Pág` y `Av Pág`. Cada hoja guarda sus regiones, máscaras y limpiezas, y al volver a ella sigue igual. Una hoja que no está abierta conserva sus 3 últimos pasos de **Deshacer**.
 - **Estado de cada hoja**, en el punto de su miniatura: malva = pendiente, rosa = lista (todas sus regiones limpias), naranja = por revisar (quedaron regiones sin limpiar o no se encontró texto). Al pasar el cursor por una miniatura se ven su nombre y su estado.
@@ -196,25 +202,53 @@ Para limpiar un capítulo, abre todas sus páginas juntas: en el diálogo de **A
 
 **Procesar todas** limpia la cola completa, una hoja tras otra: crea las máscaras que falten y limpia cada región con su método (Automático, salvo que hayas elegido otro). Las regiones dudosas quedan sin limpiar y la hoja queda en naranja. Mientras trabaja, el botón cambia a **Detener**.
 
-Lo más seguro es encerrar primero el texto de cada hoja, que con **Ajustar al texto** es rápido, y después procesarlas todas juntas. Si alguna hoja no tiene regiones, PanelClean ofrece buscar globos en ella con **Detectar globos** (sección 7), que es experimental: revisa esas hojas al terminar.
+En las hojas sin regiones, PanelClean busca el texto con **Detectar texto** (sección 7) y tiene en cuenta los puntos que hayas marcado en ellas. Lo más rápido es abrir las hojas, pulsar **Procesar todas** y después revisar las hojas en naranja. Si en alguna hoja el detector no encuentra un globo, un clic sobre él basta.
 
 **Exportar todas** pide una carpeta y guarda ahí cada hoja que tenga alguna limpieza, como `nombre_limpia.png` junto con su máscara y su reporte (los mismos tres archivos del paso 7). Si dos hojas se llaman igual, la segunda queda como `nombre_limpia_2.png`. Las hojas sin limpiezas no se exportan; al terminar, PanelClean indica cuáles quedaron con regiones sin limpiar. **Exportar**, en la barra superior, sigue guardando solo la hoja abierta.
 
-## 7. Detectar globos (experimental)
+## 7. Detectar texto
 
-**Detectar globos** busca contornos ovalados con tinta adentro y los agrega como regiones. Es un atajo para páginas con muchos globos, pero **todavía se equivoca a menudo**, sobre todo con estilos de dibujo distintos de los de las pruebas: en páginas reales encontró alrededor de la mitad de los textos, y cerca de la mitad de lo que propuso no era un globo con texto. Encerrar cada globo con **Ajustar al texto** es casi igual de rápido y mucho más seguro. Por ejemplo, el detector puede proponer viñetas completas, como R01 y R03 aquí:
+**Detectar texto** busca el texto de toda la página en dos pasos:
 
-![Candidatos de Detectar globos: R01 y R03 son viñetas, no globos](docs/manual/detectar_globos.png)
+1. Propone como candidatos los bloques oscuros que el papel rodea por completo (la misma búsqueda de **Ajustar al texto**). Así aparece la mayor parte del texto de los globos, pero también trozos de dibujo.
+2. Un modelo entrenado con páginas de manga reales decide, para cada candidato, qué tan seguro está de que es texto. Para eso mira 17 medidas del bloque: el grosor y la regularidad de los trazos, cuánto se parecen las piezas entre sí, si forman columnas o renglones, cuánto papel blanco hay alrededor, si está dentro de un globo, entre otras.
 
-Una región así es demasiado grande para ser solo texto, y su máscara incluye dibujo. Por eso, las regiones que ocupan más del 5 % de la página quedan en **Revisar máscara** y el modo automático no las limpia. En las pruebas con páginas reales, esto evita el 90 % del dibujo que se habría borrado al limpiar todas las detecciones sin revisarlas. Aun así, el resto todavía puede incluir algo de dibujo. **Antes de limpiar:**
+![Detectar texto en una página real: en malva, el texto seguro; en naranja, lo dudoso](docs/manual/detectar_texto.png)
 
-1. Elige los candidatos que no son globos y pulsa **Quitar**.
-2. Marca a mano el texto que el detector no encontró.
-3. Crea las máscaras, revisa el rosa y limpia.
+- Las regiones **seguras** (malva, o rosa cerezo si están elegidas) se limpian solas con **Limpiar todas** o **Procesar todas**.
+- Las **dudosas** quedan en **naranja** y el modo automático no las limpia. El panel Selección muestra qué tan seguro está el detector («Texto 42 % seguro · revisar»). Si una región naranja sí es texto, haz un segundo clic sobre ella para confirmarla; si no lo es, pulsa **Quitar**.
+- Un **punto** (un clic sobre el papel de un globo, fuera de las regiones) confirma el texto de ese globo. Si el detector no lo había propuesto, PanelClean lo busca ahí mismo, con el tono de papel de ese lugar. Se ve como un círculo rosa; otro clic sobre el punto lo quita. Los puntos se guardan con cada hoja y **Detectar texto** los tiene en cuenta; lo que no tiene un punto no pierde nada.
 
-Con los candidatos revisados y el resto del texto marcado a mano, la página queda así:
+Con todo el texto marcado, la página queda así:
 
-![Página real limpiada tras revisar los candidatos](docs/manual/pagina_real_limpia.png)
+![Página real limpiada con Detectar texto y Limpiar todas](docs/manual/pagina_real_limpia.png)
+
+**Qué esperar.** El detector aprendió sobre todo con manga en japonés. En páginas de OpenMantra encuentra cerca de 9 de cada 10 textos, pero **en una serie en español que no había visto encontró el 43 %** con confianza suficiente para limpiar solo, y el 62 % después de enseñarle otras páginas de esa misma serie (casi todo lo que propuso era texto). Las cifras están en los [resultados de la evaluación](evaluacion/resultados/resumen.md). El texto sobre dibujo y el de globos oscuros casi nunca se propone: para esos, marca la zona a mano.
+
+### Enseñarle tus páginas al detector
+
+1. Junta en una carpeta las páginas de **una** serie. Conviene enseñarle pocas páginas de varias series, cada una en su carpeta, antes que muchas de una sola.
+2. Arrastra esa carpeta encima de `MARCAR_WINDOWS.bat` (o haz doble clic en él y elígela). En Linux: `.venv/bin/python -m evaluacion.marcar ruta/a/la/carpeta`.
+3. En cada página aparecen, punteadas, las cajas que propone el detector. Corrígelas hasta que haya **un rectángulo por cada bloque de texto, ajustado a las letras** (no al globo):
+
+   ![Programa para marcar texto: cajas propuestas (punteadas), una elegida y una «ignorar»](docs/manual/marcar.png)
+
+   | Para… | Hacer |
+   |---|---|
+   | Agregar una caja | Arrastrar en un lugar vacío |
+   | Mover o ajustar una caja | Clic para elegirla; arrastrarla desde adentro o desde una esquina |
+   | Borrar una caja | Elegirla y `Supr` |
+   | Marcar una onomatopeya o un letrero del dibujo | Elegirla y `I` («ignorar»: no cuenta ni como texto ni como «no texto») |
+   | Deshacer | `Ctrl + Z` |
+   | Acercar, mover y volver a ver todo | Rueda, clic derecho y `0` |
+   | Terminar la página | `Enter` (pasa a la siguiente) |
+
+4. Marca **todo** el texto antes de pulsar `Enter`: lo que quede sin marcar en una página lista se aprende como «no texto». Una página sin terminar se guarda, pero no se usa.
+5. Al cerrar la ventana, acepta entrenar. Tarda uno o dos minutos y PanelClean lo usa la próxima vez que se abra.
+
+**Para saber cómo le va de verdad**, reserva una serie: marca la casilla **Serie reservada para medir** antes de empezar. Con ella no se entrena y no se muestran propuestas. El informe que aparece al entrenar dice, por serie, qué parte del texto llega a proponerse («candidatos») y la precisión y el recall. Si «candidatos» es bajo, ese texto no se arregla enseñándole más páginas.
+
+Tus imágenes no se copian a ningún lado. En `evaluacion/cajas_texto.json` quedan las cajas, con el nombre de la carpeta y de los archivos. Para compartir lo aprendido con el equipo, sube ese archivo, `evaluacion/candidatos_propios.csv` y `panelclean/modelo_texto.yml`.
 
 ## 8. Ajustes avanzados
 
@@ -240,6 +274,8 @@ Se abren con **Ajustes avanzados** en el panel izquierdo. Después de cambiar un
 | Quitar la región elegida | `Supr` |
 | Volver a la herramienta Seleccionar | `Esc` |
 | Hoja anterior / siguiente | `Re Pág` / `Av Pág` |
+| Marcar un punto donde hay texto (o quitarlo) | Clic sobre el globo, fuera de las regiones |
+| Confirmar que una región naranja es texto | Segundo clic sobre ella |
 | Zoom | Rueda del ratón sobre una vista (acerca hacia el cursor) |
 | Mover la vista | Clic derecho y arrastrar |
 | Elegir varias regiones | `Ctrl + clic` en la vista; `Ctrl` o `Shift + clic` en la lista |
@@ -254,8 +290,8 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 
 - **Texto sobre dibujo.** La máscara confunde con letras los trazos de dibujo de grosor parecido (sección 5), y cuando las letras tienen un borde blanco suele quedar su silueta. Es el caso con peores resultados en las pruebas.
 - **Letras blancas sobre fondo negro.** No se detectan: la máscara busca tinta oscura. (El texto negro con borde blanco sobre un fondo oscuro sí se detecta.)
-- **Ajustar al texto.** Solo encuentra texto rodeado de papel blanco. Con texto sobre dibujo o en globos grises usa el rectángulo tal cual, y a veces suma una región chica sobre dibujo encerrado por papel (sección 4, paso 2).
-- **Detector de globos.** Es experimental (sección 7).
+- **Ajustar al texto.** Solo encuentra texto rodeado de papel. Con texto sobre dibujo usa el rectángulo tal cual, y a veces suma una región chica sobre dibujo encerrado por papel (sección 4, paso 2).
+- **Detectar texto.** Aprendió sobre todo con manga en japonés. En una serie en español que no había visto encontró el 43 % del texto: revisa lo naranja, haz clic en lo que falte o enséñale tus páginas (sección 7). Si la página tiene una sombra fuerte (una foto, el lomo de un tomo), la detección automática pierde cerca de la mitad del texto; los clics siguen funcionando.
 - **Clasificación del fondo.** Acierta bien en papel liso, pero con tramas finas reales se equivoca más que con dibujo. Revisa la clase en el panel Selección.
 - **Restos.** En algunos globos queda un moteado gris muy tenue donde estaban las letras, sobre todo en páginas con mucha compresión JPEG. Se nota al mirar de cerca y se borra con **Añadir máscara** o subiendo la **Expansión**. También pueden quedar signos muy pequeños sin borrar (sección 5).
 
@@ -270,10 +306,13 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 | Una región no se limpia | Está en «Complejo / revisar» o «Revisar máscara», o su máscara quedó vacía. Revisa el rosa, corrígelo o elige un método a mano |
 | Al arrastrar no se crea un rectángulo | La herramienta activa es un pincel. Pulsa `Esc` o elige **Seleccionar** |
 | La región no quedó donde arrastré | Con **Ajustar al texto**, la región se ajusta a las letras que encontró en la zona. Para usar el rectángulo tal cual, desmarca la casilla |
+| Detectar texto no encuentra el texto de mis páginas | Haz clic sobre cada globo que falte, o enséñale algunas de tus páginas con `MARCAR_WINDOWS.bat` (sección 7) |
+| «No encontré texto en esa zona y es muy grande…» | Encierra un globo por vez, o desmarca **Ajustar al texto** y marca solo las letras |
+| Un clic sobre la página deja un círculo rosa | Es un punto de texto (sección 7). Otro clic sobre él lo quita |
 | No puedo cambiar de hoja | Mientras corre **Procesar todas** no se puede; espera o pulsa **Detener** |
 | El pincel no hace nada | Hay que elegir antes una región (un clic sobre ella) y pintar dentro de su rectángulo |
 | La ventana no cabe en la pantalla | En pantallas chicas PanelClean se abre maximizada; los paneles laterales se pueden ocultar con sus botones **‹** y **›** |
-| Va lento | Pasa con páginas muy grandes. Una página de 2048 px se procesa en menos de 2 s en un portátil común |
+| Va lento | Pasa con páginas muy grandes. En un portátil común, detectar y limpiar una página de 2048 px toma menos de 1 s |
 
 ## 12. Créditos
 
