@@ -4,8 +4,10 @@ Ejecutar desde la raíz del repositorio:
     python -m unittest discover tests
 """
 
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -193,7 +195,7 @@ class FondoTest(unittest.TestCase):
         self.assertEqual(r.suggested_method, 'Inpainting Telea')
 
     def test_una_vineta_entera_queda_para_revision(self):
-        # Una viñeta completa (como los candidatos grandes de «Detectar globos»)
+        # Una viñeta completa (como los globos grandes que propone detect_bubbles)
         # no se limpia sola: su máscara incluiría dibujo.
         r = self.clasificar((720, 500, 1390, 970))
         self.assertEqual(r.classification, 'Revisar máscara')
@@ -310,6 +312,165 @@ class ZonaTest(unittest.TestCase):
         img = np.full((200, 200, 3), 255, np.uint8)
         cv2.circle(img, (100, 100), 60, (0, 0, 0), 2)
         self.assertEqual(V.texto_en_zona(img, (10, 10, 190, 190)), [])
+
+
+class DetectorTextoTest(unittest.TestCase):
+    """Detector entrenado (candidatos + random forest) y puntos del usuario."""
+
+    def setUp(self):
+        self.img = V.bgr_from_file(str(DEMO))
+
+    def caja_parecida(self, regiones, texto):
+        """La región que cubre la mayor parte de la caja de texto dada, o None."""
+        for r in regiones:
+            caja = (r.x, r.y, r.x + r.w, r.y + r.h)
+            if interseccion(caja, texto) > 0.8 * area(texto):
+                return r
+        return None
+
+    def test_detecta_el_globo_blanco_con_confianza(self):
+        r = self.caja_parecida(V.detectar_texto(self.img), TEXTO_LISO)
+        self.assertIsNotNone(r)
+        self.assertGreaterEqual(r.confianza, V.CONFIANZA_LIMPIAR)
+        self.assertEqual(r.origin, 'Detectada')
+
+    def test_un_punto_confirma_el_texto_que_tiene_cerca(self):
+        x1, y1, x2, y2 = TEXTO_PUNTOS
+        punto = ((x1 + x2) // 2, (y1 + y2) // 2)
+        r = self.caja_parecida(V.detectar_texto(self.img, [punto]), TEXTO_PUNTOS)
+        self.assertIsNotNone(r)
+        self.assertEqual(r.confianza, 1.0)
+
+    def test_un_clic_en_el_papel_del_globo_cuenta(self):
+        papel = V.papel_de_pagina(self.img)
+        r = self.caja_parecida(
+            V.puntuar_candidatos(self.img, papel=papel), TEXTO_PUNTOS
+        )
+        arriba_del_texto = (1190, 140)  # papel del globo, a 28 px de las letras
+        self.assertEqual(V.regiones_del_punto([r], arriba_del_texto, papel), [r])
+        self.assertEqual(
+            V.regiones_del_punto([r], (700, 900), papel), [], 'otra viñeta'
+        )
+
+    def test_encuentra_el_texto_con_papel_gris_tinta_lavada_o_mas_resolucion(self):
+        f = self.img.astype(np.float32)
+        variantes = {
+            'papel gris': np.clip(f * 0.8, 0, 255),
+            'papel amarillento': np.clip(f * np.array([0.72, 0.86, 0.92]), 0, 255),
+            'tinta lavada': np.clip(f * 0.62 + 80, 0, 255),
+        }
+        for nombre, imagen in variantes.items():
+            r = self.caja_parecida(
+                V.detectar_texto(imagen.astype(np.uint8)), TEXTO_LISO
+            )
+            self.assertIsNotNone(r, nombre)
+            self.assertGreaterEqual(r.confianza, V.CONFIANZA_LIMPIAR, nombre)
+        doble = cv2.resize(self.img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        texto = tuple(2 * v for v in TEXTO_LISO)
+        self.assertIsNotNone(self.caja_parecida(V.detectar_texto(doble), texto))
+
+    def test_una_hoja_casi_en_blanco_no_oscurece_sus_grises(self):
+        gris = np.full((1170, 830), 255, np.uint8)
+        gris[500:1000, 100:700] = 185  # trama clara
+        for k, letra in enumerate('HOLA'):
+            cv2.putText(
+                gris, letra, (200 + 24 * k, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.9, 0, 3
+            )
+        self.assertIs(V.aclarar_papel(gris), gris)
+
+    def test_una_pagina_con_buen_contraste_no_se_altera(self):
+        gris = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
+        self.assertIs(V.aclarar_papel(gris), gris)
+        self.assertEqual(V.preparar_pagina(self.img).escala, 1.0)
+
+    def test_figuras_grandes_no_se_toman_por_letras(self):
+        # Papel con cuatro figuras grandes: antes, la hoja entera era un «bloque».
+        img = np.full((1170, 830, 3), 255, np.uint8)
+        for x, y in ((80, 80), (460, 80), (80, 620), (460, 620)):
+            cv2.rectangle(img, (x, y), (x + 280, y + 400), (0, 0, 0), -1)
+        self.assertEqual(V.texto_en_zona(img, (0, 0, 830, 1170)), [])
+
+    def test_una_palabra_en_letra_latina_es_un_bloque(self):
+        img = np.full((400, 400, 3), 255, np.uint8)
+        # Letras que se tocan: la palabra entera es una sola pieza muy alargada, que
+        # antes se descartaba como si fuera una línea del dibujo.
+        cv2.putText(
+            img, 'HELLO', (120, 210), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 0), 3
+        )
+        cv2.line(img, (122, 209), (225, 209), (0, 0, 0), 2)
+        self.assertEqual(len(V.texto_en_zona(img, (20, 20, 380, 380))), 1)
+        # Una línea del dibujo, del mismo largo pero delgada, se sigue descartando.
+        linea = np.full((400, 400, 3), 255, np.uint8)
+        cv2.line(linea, (120, 200), (230, 200), (0, 0, 0), 4)
+        self.assertEqual(V.texto_en_zona(linea, (20, 20, 380, 380)), [])
+
+    def test_un_punto_no_confirma_una_region_gigante(self):
+        papel = V.papel_de_pagina(self.img)
+        alto, ancho = self.img.shape[:2]
+        gigante = V.Region(0, 0, ancho, alto, confianza=0.35)
+        chica = V.Region(1097, 168, 190, 86, confianza=0.35)
+        punto = (1190, 210)
+        self.assertEqual(V.regiones_del_punto([gigante], punto, papel), [])
+        self.assertEqual(V.regiones_del_punto([gigante, chica], punto, papel), [chica])
+        elegidas = V.elegir_texto([gigante, chica], (punto,), papel)
+        self.assertEqual([r.confianza for r in elegidas], [0.35, 1.0])
+
+    def test_un_punto_encuentra_texto_en_un_globo_gris(self):
+        # Globo gris sobre papel blanco: con el papel de la página no hay candidato.
+        img = np.full((600, 600, 3), 255, np.uint8)
+        cv2.ellipse(img, (300, 300), (150, 110), 0, 0, 360, (150, 150, 150), -1)
+        cv2.ellipse(img, (300, 300), (150, 110), 0, 0, 360, (0, 0, 0), 3)
+        for k, letra in enumerate('ABCD'):
+            cv2.putText(
+                img,
+                letra,
+                (215 + 45 * k, 315),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.2,
+                (0, 0, 0),
+                4,
+            )
+        regiones = V.buscar_en_punto(img, (300, 260))
+        self.assertEqual(len(regiones), 1)
+        r = regiones[0]
+        self.assertTrue(190 <= r.x and r.x + r.w <= 420 and 260 <= r.y, r.rect)
+
+    def test_sin_punto_cerca_no_se_pierde_nada(self):
+        sin = V.detectar_texto(self.img)
+        lejos = V.detectar_texto(self.img, [(5, 5)])
+        self.assertEqual([r.rect for r in sin], [r.rect for r in lejos])
+        self.assertEqual([r.confianza for r in sin], [r.confianza for r in lejos])
+
+    def test_una_region_dudosa_queda_para_revision(self):
+        r = V.bounded_region(self.img, TEXTO_LISO)
+        r.confianza = V.CONFIANZA_LIMPIAR - 0.1
+        V.generate_mask(self.img, r, V.Options())
+        self.assertEqual(r.suggested_method, 'Revisión manual')
+        self.assertIn('Puede no ser texto', r.review_reason)
+        sin_cambios, _, n = V.clean_region(self.img, r, V.Options())
+        self.assertEqual(n, 0)
+        self.assertTrue(np.array_equal(sin_cambios, self.img))
+
+    def test_sin_modelo_propone_pero_no_limpia(self):
+        with mock.patch.object(V, 'cargar_modelo', return_value=None):
+            regiones = V.puntuar_candidatos(self.img)
+        self.assertTrue(regiones)
+        self.assertTrue(all(r.confianza == V.CONFIANZA_PROPONER for r in regiones))
+
+    def test_el_modelo_se_lee_aunque_la_ruta_tenga_tildes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / 'Tomás Ñandú' / 'modelo_texto.yml'
+            ruta.parent.mkdir()
+            ruta.write_bytes(V.MODELO_TEXTO.read_bytes())
+            modelo = V.cargar_modelo(ruta)
+            V._modelos.pop(ruta, None)
+        _, medidas = V.candidatos_de_texto(self.img)
+        self.assertTrue(
+            np.allclose(
+                V.probabilidad_de_texto(modelo, medidas),
+                V.probabilidad_de_texto(V.cargar_modelo(), medidas),
+            )
+        )
 
 
 class DeteccionTest(unittest.TestCase):

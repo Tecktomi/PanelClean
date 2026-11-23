@@ -32,7 +32,9 @@ from PIL import Image, ImageDraw
 from panelclean import __version__
 from panelclean import vision as V
 
+from . import cajas as K
 from . import calibrar_selector
+from . import entrenar_detector as D
 from . import metricas as M
 from . import muestreo
 from . import sinteticos as S
@@ -446,10 +448,11 @@ def dibujo_en_modo_automatico(
 
 
 def evaluar_deteccion(datos: list[dict], por_libro: int | None = None) -> list[dict]:
-    """Corre detect_bubbles en cada página y cuenta aciertos con los dos criterios.
+    """Corre detect_bubbles (el detector anterior) en cada página y cuenta aciertos.
 
-    También mide qué borraría el modo automático si se limpiaran todas las
-    regiones detectadas sin revisarlas.
+    Se cuentan con el criterio actual (cajas.acierta: el centro cae en el texto y la
+    región no mide más de 3 veces su caja) y con el original (cobertura del 80 % de
+    la caja). También qué borraría el modo automático si se limpiaran todas.
     """
     filas = []
     for libro in datos:
@@ -468,82 +471,370 @@ def evaluar_deteccion(datos: list[dict], por_libro: int | None = None) -> list[d
                     'pagina': pagina['page_index'],
                     'textos': len(textos),
                     'detecciones': len(detecciones),
-                    'textos_acertados': acertados,
-                    'detecciones_correctas': correctas,
-                    'aciertos_iou50': M.aciertos_por_iou(detecciones, textos),
+                    'textos_hallados': sum(
+                        any(K.acierta(d, t) for d in detecciones) for t in textos
+                    ),
+                    'detecciones_correctas': sum(
+                        any(K.acierta(d, t) for t in textos) for d in detecciones
+                    ),
+                    'textos_cobertura': acertados,
+                    'correctas_cobertura': correctas,
                     **dibujo_en_modo_automatico(imagen, regiones, textos),
                 }
             )
     return filas
 
 
-def resumen_deteccion(filas: list[dict]) -> tuple[str, float, float]:
-    """Sección de detección. Devuelve (texto, F1 total, F1 en la obra de prueba)."""
+def evaluar_detector_texto(
+    datos: list[dict], recalcular: bool = True, avance=print
+) -> tuple[list[dict], dict]:
+    """Mide el detector entrenado en OpenMantra y en las series propias marcadas.
 
-    def medir(g):
-        t = sum(f['textos'] for f in g)
-        d = sum(f['detecciones'] for f in g)
-        p, r, f1 = M.precision_recall_f1(
-            sum(f['detecciones_correctas'] for f in g),
-            d,
-            sum(f['textos_acertados'] for f in g),
-            t,
+    Cada obra de desarrollo (y cada serie propia) se mide con un modelo entrenado
+    sin ella; la obra reservada y las series reservadas, con el modelo final, que no
+    las usa. Devuelve (filas por candidato para el CSV, medidas por conjunto).
+    """
+    filas = D.candidatos_openmantra(recalcular, avance)
+    propias = D.medir_propias(avance)
+    reservadas = {g for g, serie in K.leer().items() if serie['reservada']}
+    p, pp, _ = D.validacion_cruzada(filas, propias, reservadas)
+    totales = D.textos_por_grupo(datos)
+    grupos = list(dict.fromkeys(f['grupo'] for f in filas))
+    conjuntos = {g: {g} for g in grupos}
+    conjuntos['desarrollo'] = set(grupos) - {LIBRO_PRUEBA}
+    conjuntos['todas'] = set(grupos)
+    textos = {
+        (libro['book_title'], str(pagina['page_index'])): [
+            (t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h']) for t in pagina['text']
+        ]
+        for libro in datos
+        for pagina in libro['pages']
+    }
+    medidas = {}
+    for nombre, incluidos in conjuntos.items():
+        sel = [i for i, f in enumerate(filas) if f['grupo'] in incluidos]
+        sub, q = [filas[i] for i in sel], p[sel]
+        n = sum(totales[g] for g in incluidos)
+        medidas[nombre] = {
+            'proponer': D.medir_deteccion(sub, q, V.CONFIANZA_PROPONER, n),
+            'limpiar': D.medir_deteccion(sub, q, V.CONFIANZA_LIMPIAR, n),
+        }
+        # Criterio original: cobertura del 80 % de la caja anotada.
+        aceptadas: dict = {}
+        for f, c in zip(sub, q):
+            if f['tipo'] == 'original' and c >= V.CONFIANZA_LIMPIAR:
+                x, y, w, h = (int(f[k]) for k in ('x', 'y', 'w', 'h'))
+                aceptadas.setdefault((f['grupo'], f['pagina']), []).append(
+                    (x, y, x + w, y + h)
+                )
+        hallados = correctas = 0
+        for clave, cajas in textos.items():
+            if clave[0] in incluidos:
+                a, b = M.aciertos_por_cobertura(aceptadas.get(clave, []), cajas)
+                hallados, correctas = hallados + a, correctas + b
+        medidas[nombre]['cobertura'] = M.precision_recall_f1(
+            correctas, medidas[nombre]['limpiar']['detecciones'], hallados, n
         )
-        a = sum(f['aciertos_iou50'] for f in g)
-        _, _, f1_iou = M.precision_recall_f1(a, d, a, t)
-        return [len(g), t, d, num(p), num(r), f'**{num(f1)}**', num(f1_iou)], f1
+    dev = [i for i, f in enumerate(filas) if f['grupo'] != LIBRO_PRUEBA]
+    medidas['horizontal'] = D.medir_deteccion(
+        [filas[i] for i in dev],
+        p[dev],
+        V.CONFIANZA_LIMPIAR,
+        sum(totales[g] for g in conjuntos['desarrollo']),
+        'horizontal',
+    )
+    propios = D.textos_propios()
+    medidas['propias'] = {}
+    for g in dict.fromkeys(f['grupo'] for f in propias):
+        sel = [i for i, f in enumerate(propias) if f['grupo'] == g]
+        m = D.medir_deteccion(
+            [propias[i] for i in sel],
+            pp[sel],
+            V.CONFIANZA_LIMPIAR,
+            propios[g],
+            'propia',
+        )
+        medidas['propias'][g] = [('reservada' if g in reservadas else 'sin verla', m)]
+        q = None
+        if g not in reservadas:
+            q = D.validacion_por_paginas(filas, propias, g)
+        if q is not None:
+            m = D.medir_deteccion(
+                [propias[i] for i in sel], q, V.CONFIANZA_LIMPIAR, propios[g], 'propia'
+            )
+            medidas['propias'][g].append(('viendo otras de sus páginas', m))
+    salida = [
+        {
+            k: f[k]
+            for k in ('grupo', 'pagina', 'x', 'y', 'w', 'h', 'es_texto', 'px_dibujo')
+        }
+        | {'confianza': round(float(c), 3)}
+        for f, c in zip(filas, p)
+        if f['tipo'] == 'original'
+    ]
+    return salida, medidas
+
+
+GIGANTE = 0.15  # fracción de la hoja desde la que una región es «gigante»
+
+
+def _aclarado(factor, suma=0.0):
+    """Variante de escaneo: multiplica (por canal o en total) y suma un tono."""
+    return lambda im: np.clip(
+        im.astype(np.float32) * np.array(factor) + suma, 0, 255
+    ).astype(np.uint8)
+
+
+def _sombra(imagen: np.ndarray) -> np.ndarray:
+    """Variante de escaneo: la página se oscurece hacia la derecha (hasta un 28 %)."""
+    peso = np.linspace(1.0, 0.72, imagen.shape[1])[None, :, None]
+    return (imagen.astype(np.float32) * peso).astype(np.uint8)
+
+
+def _a_tamano(k: float):
+    """Variante de escaneo: la página con k veces la resolución."""
+    modo = cv2.INTER_CUBIC if k > 1 else cv2.INTER_AREA
+    return lambda im: cv2.resize(im, None, fx=k, fy=k, interpolation=modo)
+
+
+VARIANTES = {  # nombre: (cómo se altera la página, escala)
+    'Original': (lambda im: im, 1.0),
+    'Papel 18 % más oscuro': (_aclarado(0.82), 1.0),
+    'Papel amarillento': (_aclarado([0.72, 0.86, 0.92]), 1.0),
+    'Tinta lavada': (_aclarado(0.62, 80), 1.0),
+    'Sombra hacia un lado': (_sombra, 1.0),
+    'Resolución × 2': (_a_tamano(2.0), 2.0),
+    'Resolución × 0,6': (_a_tamano(0.6), 0.6),
+}
+
+
+def evaluar_escaneos(datos: list[dict], cada: int = 6) -> list[dict]:
+    """Candidatos y clics en páginas de desarrollo alteradas como escaneos distintos.
+
+    No depende del modelo: mide qué textos aparecen entre los candidatos y qué pasa
+    al hacer clic en el centro de cada texto (si queda una región correcta y si se
+    confirma alguna gigante).
+    """
+    paginas = [
+        pagina
+        for libro in datos
+        if libro['book_title'] != LIBRO_PRUEBA
+        for pagina in libro['pages'][::cada]
+    ]
+    filas = []
+    for nombre, (alterar, k) in VARIANTES.items():
+        cuenta = {'textos': 0, 'candidatos': 0, 'clic': 0, 'clic_gigante': 0}
+        for pagina in paginas:
+            base = V.bgr_from_file(str(DATASET / pagina['image_paths']['ja']))
+            imagen = alterar(base)
+            preparada = V.preparar_pagina(imagen)
+            papel = V.papel_de_pagina(imagen, preparada)
+            candidatos, _ = V.candidatos_de_texto(imagen, preparada)
+            for r in candidatos:
+                r.papel = V._papel_alrededor(papel, (r.x, r.y, r.x + r.w, r.y + r.h))
+            limite = GIGANTE * imagen.shape[0] * imagen.shape[1]
+            for t in pagina['text']:
+                caja = tuple(
+                    k * v for v in (t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h'])
+                )
+
+                def correcta(r):
+                    """La región corresponde a este texto."""
+                    return K.acierta((r.x, r.y, r.x + r.w, r.y + r.h), caja)
+
+                punto = (int((caja[0] + caja[2]) / 2), int((caja[1] + caja[3]) / 2))
+                confirmadas = V.regiones_del_punto(candidatos, punto, papel)
+                if not confirmadas:
+                    confirmadas = V.buscar_en_punto(imagen, punto, preparada)
+                cuenta['textos'] += 1
+                cuenta['candidatos'] += any(map(correcta, candidatos))
+                cuenta['clic'] += any(map(correcta, confirmadas))
+                cuenta['clic_gigante'] += any(r.w * r.h > limite for r in confirmadas)
+        filas.append({'variante': nombre, 'paginas': len(paginas), **cuenta})
+    return filas
+
+
+def miles(n: int) -> str:
+    """Entero con punto de miles, como se escribe en español."""
+    return f'{n:,}'.replace(',', '.')
+
+
+def resumen_deteccion(
+    filas: list[dict], medidas: dict, escaneos: list[dict]
+) -> tuple[str, dict]:
+    """Sección de detección. Devuelve (texto, valores para la tabla de metas)."""
+
+    def anterior(g):
+        """Precisión, recall y F1 de detect_bubbles con el criterio actual."""
+        return M.precision_recall_f1(
+            sum(f['detecciones_correctas'] for f in g),
+            sum(f['detecciones'] for f in g),
+            sum(f['textos_hallados'] for f in g),
+            sum(f['textos'] for f in g),
+        )
+
+    def cobertura_anterior(g):
+        """F1 de detect_bubbles con el criterio original."""
+        return M.precision_recall_f1(
+            sum(f['correctas_cobertura'] for f in g),
+            sum(f['detecciones'] for f in g),
+            sum(f['textos_cobertura'] for f in g),
+            sum(f['textos'] for f in g),
+        )[2]
 
     partes = ['## 5. Detección de texto (OpenMantra)', '']
     partes.append(
-        'Detector actual: `detect_bubbles` (heurístico, busca globos ovalados). Una caja de '
-        'texto está acertada si al menos el 80 % queda dentro de una región detectada; una '
-        'detección es correcta si contiene así algún texto. Como referencia se incluye el F1 '
-        'con el criterio estándar (emparejamiento uno a uno con IoU ≥ 0,5), que castiga que '
-        'el globo sea mucho más grande que el texto.'
+        'Detector de «Detectar texto» y de «Procesar todas»: bloques de tinta rodeados de '
+        'papel en la página entera, filtrados por un random forest de OpenCV que mira '
+        f'{len(V.RASGOS_TEXTO)} medidas de cada bloque (`entrenar_detector.py`). Se '
+        f'informan las regiones con confianza ≥ {num(V.CONFIANZA_LIMPIAR, 1)}, las que el '
+        'modo automático limpia. Cada obra de desarrollo se mide con un modelo entrenado '
+        'sin ella. **Criterio**: una región acierta un texto si su centro cae en la caja '
+        'anotada y no mide más de 3 veces esa caja.'
+    )
+    partes.append('')
+    partes.append(
+        f'**Qué no dice esta tabla.** `{LIBRO_PRUEBA}` nunca se usó para entrenar, pero se '
+        'consultó varias veces durante el desarrollo (para mirar errores y comparar '
+        'alternativas), así que su resultado no es una prueba a ciegas. Y las cinco obras '
+        'son del mismo conjunto, todas en japonés: no dice cómo le va en otros idiomas o '
+        'estilos. Para eso están las series propias que se marcan con `marcar.py`.'
     )
     partes.append('')
     filas_tabla = []
-    for libro in dict.fromkeys(f['libro'] for f in filas):
-        valores, _ = medir([f for f in filas if f['libro'] == libro])
-        nombre = f'{libro} (prueba)' if libro == LIBRO_PRUEBA else libro
-        filas_tabla.append([nombre] + valores)
-    total, f1_total = medir(filas)
-    filas_tabla.append(['**Todas**'] + total)
+    conjuntos = [
+        (libro, [f for f in filas if f['libro'] == libro])
+        for libro in dict.fromkeys(f['libro'] for f in filas)
+    ]
+    conjuntos.append(('desarrollo', [f for f in filas if f['libro'] != LIBRO_PRUEBA]))
+    conjuntos.append(('todas', filas))
+    nombres = {
+        LIBRO_PRUEBA: f'{LIBRO_PRUEBA} (reservada)',
+        'desarrollo': '**Desarrollo**',
+        'todas': '**Todas**',
+    }
+    for clave, g in conjuntos:
+        m = medidas[clave]['limpiar']
+        filas_tabla.append(
+            [
+                nombres.get(clave, clave),
+                sum(f['textos'] for f in g),
+                ' · '.join(num(v) for v in anterior(g)),
+                num(m['precision']),
+                num(m['recall']),
+                f'**{num(m["f1"])}**',
+                f'{num(cobertura_anterior(g))} → {num(medidas[clave]["cobertura"][2])}',
+            ]
+        )
     partes.append(
         tabla(
             [
                 'Obra',
-                'Páginas',
                 'Textos',
-                'Detecciones',
+                'Anterior (`detect_bubbles`): P · R · F1',
                 'Precisión',
                 'Recall',
                 'F1',
-                'F1 (IoU ≥ 0,5)',
+                'F1 con el criterio original (anterior → actual)',
             ],
             filas_tabla,
         )
     )
     partes.append('')
-    limpiadas = sum(f['auto_limpiadas'] for f in filas)
-    revision = sum(f['auto_revision'] for f in filas)
-    dibujo = sum(f['px_dibujo'] for f in filas)
-    total_px = dibujo + sum(f['px_texto'] for f in filas)
-    miles = f'{dibujo:,}'.replace(',', '.')
-    area = f'{V.AREA_REVISAR:,}'.replace(',', '.')
     partes.append(
-        '**Modo automático después de «Detectar globos».** Si se limpian todas las '
-        f'regiones detectadas sin revisarlas, el modo automático limpia {limpiadas} '
-        f'y deja {revision} para revisión. De los píxeles que borra, {miles} '
-        f'({num(100 * dibujo / max(1, total_px), 0)} %) están fuera de las cajas de '
-        'texto anotadas: es dibujo que se pierde. Las regiones de más del '
-        f'{num(100 * V.FRACCION_PAGINA_REVISAR, 0)} % de la página (y más de {area} '
-        'px) quedan para revisión, porque casi nunca son solo texto: suelen ser '
-        'viñetas enteras.'
+        'El criterio original, usado hasta el 23/11, pedía cubrir el 80 % de la caja '
+        'anotada. Las cajas de OpenMantra son más holgadas que las letras y las regiones '
+        'actuales se ajustan a ellas, así que casi nunca lo cumplen aunque contengan todo '
+        'el texto. Se informan los dos: el cambio de criterio favorece al detector actual.'
     )
-    prueba = [f for f in filas if f['libro'] == LIBRO_PRUEBA]
-    f1_prueba = medir(prueba)[1] if prueba else float('nan')
-    return '\n'.join(partes), f1_total, f1_prueba
+    partes.append('')
+    prop, limp = medidas['todas']['proponer'], medidas['todas']['limpiar']
+    limpiados = limp['px_dibujo'] + limp['px_texto']
+    dibujo_ant = sum(f['px_dibujo'] for f in filas)
+    total_ant = dibujo_ant + sum(f['px_texto'] for f in filas)
+    partes.append(
+        f'Contando también las dudosas (confianza ≥ {num(V.CONFIANZA_PROPONER, 1)}, en '
+        f'naranja, que no se limpian solas), el recall es {num(prop["recall"])} y la '
+        f'precisión {num(prop["precision"])}. El techo, si se aceptaran todos los '
+        f'candidatos, es {num(limp["techo"])}.'
+    )
+    partes.append('')
+    partes.append(
+        '**Dibujo que borraría el modo automático.** De los píxeles que se limpian en '
+        f'todas las páginas, {num(100 * limp["px_dibujo"] / max(1, limpiados), 1)} % están '
+        f'fuera de las cajas de texto anotadas: {miles(limp["px_dibujo"])} de '
+        f'{miles(limpiados)}. Con `detect_bubbles` eran '
+        f'{num(100 * dibujo_ant / max(1, total_ant), 0)} % ({miles(dibujo_ant)} de '
+        f'{miles(total_ant)}).'
+    )
+    partes.append('')
+    h = medidas['horizontal']
+    partes.append(
+        '**Texto horizontal simulado.** En las páginas de desarrollo con los globos '
+        'traducidos al inglés (`horizontales.py`), cada obra sin verla: precisión '
+        f'{num(h["precision"])}, recall {num(h["recall"])} y techo {num(h["techo"])}. Es una '
+        'aproximación: las fuentes son las mismas del entrenamiento y no hay páginas reales.'
+    )
+    partes.append('')
+    partes.append(
+        f'**Escaneos distintos y clics** ({escaneos[0]["paginas"]} páginas de desarrollo, '
+        'sin usar el modelo). «Candidatos»: textos que el detector llega a proponer. '
+        '«Clic»: textos que quedan con una región correcta al hacer clic en su centro. '
+        f'«Gigantes»: clics que confirman una región de más del {num(100 * GIGANTE, 0)} % '
+        'de la hoja.'
+    )
+    partes.append('')
+    partes.append(
+        tabla(
+            ['Variante', 'Textos', 'Candidatos', 'Clic', 'Gigantes'],
+            [
+                [
+                    e['variante'],
+                    e['textos'],
+                    f'{num(100 * e["candidatos"] / e["textos"], 0)} %',
+                    f'{num(100 * e["clic"] / e["textos"], 0)} %',
+                    e['clic_gigante'],
+                ]
+                for e in escaneos
+            ],
+        )
+    )
+    partes.append('')
+    if medidas['propias']:
+        partes.append(
+            '**Series propias** (marcadas con `marcar.py`). «Sin verla»: el modelo no se '
+            'entrenó con esa serie. «Viendo otras de sus páginas»: se entrenó con parte de '
+            'ellas y se midió en las demás. Si la serie no es reservada, sus cajas partieron '
+            'de las propuestas del detector, y eso lo favorece algo.'
+        )
+        partes.append('')
+        partes.append(
+            tabla(
+                ['Serie', 'Textos', 'Candidatos (techo)', 'Precisión', 'Recall', 'F1'],
+                [
+                    [
+                        f'Serie {k} ({como})',
+                        m['textos'],
+                        num(m['techo']),
+                        num(m['precision']),
+                        num(m['recall']),
+                        f'**{num(m["f1"])}**',
+                    ]
+                    for k, casos in enumerate(medidas['propias'].values(), 1)
+                    for como, m in casos
+                ],
+            )
+        )
+    else:
+        partes.append(
+            '**Series propias:** todavía no hay páginas marcadas, así que no hay una '
+            'medida en otros idiomas.'
+        )
+    return '\n'.join(partes), {
+        'f1': limp['f1'],
+        'f1_reservada': medidas[LIBRO_PRUEBA]['limpiar']['f1'],
+        'f1_original': medidas['todas']['cobertura'][2],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -674,14 +965,14 @@ def resumen_zonas(filas: list[dict]) -> tuple[str, dict]:
     filas_tabla = []
     grupos = [
         (
-            f'{l} (prueba)' if l == LIBRO_PRUEBA else l,
+            f'{l} (reservada)' if l == LIBRO_PRUEBA else l,
             [f for f in filas if f['libro'] == l],
         )
         for l in dict.fromkeys(f['libro'] for f in filas)
     ]
     grupos.append(
         (
-            '**Desarrollo (sin la prueba)**',
+            '**Desarrollo (sin la reservada)**',
             [f for f in filas if f['libro'] != LIBRO_PRUEBA],
         )
     )
@@ -710,8 +1001,9 @@ def resumen_zonas(filas: list[dict]) -> tuple[str, dict]:
         'compara usar ese rectángulo tal cual como región con buscar el texto dentro de '
         'él (`texto_en_zona`); cada celda dice «tal cual → **ajustado**». Las letras de referencia son la '
         'máscara que da la caja anotada; el dibujo borrado son los píxeles de máscara '
-        'fuera de todas las cajas anotadas. Los parámetros se ajustaron solo con las '
-        'cuatro obras de desarrollo. Si no encuentra texto, la aplicación usa el '
+        'fuera de todas las cajas anotadas. Los parámetros se ajustaron con las '
+        'cuatro obras de desarrollo; la reservada se consultó al desarrollarlo (para ver '
+        'sus errores y probar una regla). Si no encuentra texto, la aplicación usa el '
         'rectángulo tal cual, y aquí también.',
         '',
         tabla(
@@ -761,7 +1053,8 @@ def nombre_cpu() -> str:
 
 
 def evaluar_rendimiento(datos: list[dict], n_paginas: int) -> list[dict]:
-    """Tiempo de detección + máscaras + limpieza automática en páginas de 2048 px."""
+    """Tiempo de detectar el texto, crear las máscaras y limpiar en automático, en
+    páginas de OpenMantra ampliadas a 2048 px."""
     paginas = [(libro['book_title'], p) for libro in datos for p in libro['pages']]
     elegidas = np.linspace(0, len(paginas) - 1, min(n_paginas, len(paginas))).astype(
         int
@@ -776,7 +1069,7 @@ def evaluar_rendimiento(datos: list[dict], n_paginas: int) -> list[dict]:
             imagen, None, fx=escala, fy=escala, interpolation=cv2.INTER_CUBIC
         )
         inicio = time.perf_counter()
-        regiones = V.detect_bubbles(imagen)
+        regiones = V.detectar_texto(imagen)  # el detector de «Detectar texto»
         trabajo = imagen
         for region in regiones:
             V.generate_mask(imagen, region, opciones)
@@ -1070,6 +1363,14 @@ def main() -> None:
     avance('Midiendo la detección en OpenMantra…')
     filas_det = evaluar_deteccion(datos, por_libro)
     guardar_csv('deteccion.csv', filas_det)
+    avance('Midiendo el detector entrenado…')
+    filas_detector, medidas_detector = evaluar_detector_texto(
+        datos, recalcular=not args.rapido, avance=avance
+    )
+    guardar_csv('detector.csv', filas_detector)
+    avance('Midiendo escaneos distintos y clics…')
+    escaneos = evaluar_escaneos(datos, 24 if args.rapido else 6)
+    guardar_csv('escaneos.csv', escaneos)
     avance('Midiendo «Ajustar al texto» con zonas aproximadas…')
     filas_zonas = evaluar_zonas(datos, 10 if args.rapido else ZONAS_POR_LIBRO)
     guardar_csv('zonas.csv', filas_zonas)
@@ -1091,7 +1392,7 @@ def main() -> None:
     texto_mascara, iou_medio = resumen_mascara(filas_mascara)
     texto_selector, macro_sint = resumen_selector(filas_mascara)
     texto_limpieza, clave = resumen_limpieza(filas_limpieza)
-    texto_det, f1_det, f1_prueba = resumen_deteccion(filas_det)
+    texto_det, det = resumen_deteccion(filas_det, medidas_detector, escaneos)
     texto_zonas, zonas = resumen_zonas(filas_zonas)
     texto_tiempo, t_max = resumen_rendimiento(filas_tiempo)
     texto_real, macro_real = resumen_selector_real(filas_real, acuerdo, cv_real)
@@ -1102,16 +1403,23 @@ def main() -> None:
     hip = clave.get('sistema', {})
     filas_meta = [
         [
-            'Detección (F1, todas las obras)',
+            'Detección en OpenMantra (F1, criterio actual: centro y tamaño)',
             '≥ 0,85',
-            num(f1_det),
-            cumple(f1_det >= 0.85),
+            num(det['f1']),
+            cumple(det['f1'] >= 0.85),
         ],
         [
-            f'Detección (F1, obra de prueba {LIBRO_PRUEBA})',
+            f'Detección (F1, criterio actual, obra reservada {LIBRO_PRUEBA}, '
+            'consultada durante el desarrollo)',
             '≥ 0,85',
-            num(f1_prueba),
-            cumple(f1_prueba >= 0.85),
+            num(det['f1_reservada']),
+            cumple(det['f1_reservada'] >= 0.85),
+        ],
+        [
+            'Detección en OpenMantra (F1, criterio original: cubrir 80 % de la caja)',
+            '≥ 0,85',
+            num(det['f1_original']),
+            cumple(det['f1_original'] >= 0.85),
         ],
         [
             'Máscara (IoU medio, sintéticos)',

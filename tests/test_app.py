@@ -202,6 +202,113 @@ class AppTest(unittest.TestCase):
         pregunta.assert_called_once()
         self.assertEqual(Path(self.app.source_path).name, 'demo_pagina.png')
 
+    # --- detector de texto y puntos ------------------------------------------
+    def clic(self, x, y):
+        """Clic corto en el punto (x, y) de la página, sobre la vista ORIGINAL."""
+        self.app.render_views()
+        escala, ox, oy = self.app._mapping['left']
+        evento = mock.Mock(
+            x=ox + (x + 0.5) * escala, y=oy + (y + 0.5) * escala, state=0
+        )
+        self.app.left_down(evento)
+        self.app.left_up(evento)
+
+    def test_detectar_texto_deja_las_dudosas_sin_limpiar(self):
+        self.app.remove_all()
+        self.app.auto_detect()
+        self.assertTrue(self.app.regions)
+        confianzas = {r.id: r.confianza for r in self.app.regions}
+        self.app.clean_all()
+        for r in self.app.regions:
+            if confianzas[r.id] < A.CONFIANZA_LIMPIAR:
+                self.assertNotIn(r.id, self.app.applied_ids, self.app._nombre(r))
+        self.assertTrue(
+            any(c >= A.CONFIANZA_LIMPIAR for c in confianzas.values()),
+            'el globo blanco del ejemplo se detecta con confianza',
+        )
+
+    def test_un_clic_sobre_un_globo_agrega_su_texto_confirmado(self):
+        self.app.remove_all()
+        x1, y1, x2, y2 = TEXTOS[1]
+        self.clic((x1 + x2) // 2, (y1 + y2) // 2)
+        self.assertEqual(len(self.app.puntos), 1)
+        self.assertEqual(len(self.app.regions), 1)
+        self.assertEqual(self.app.regions[0].confianza, 1.0)
+        # Otro clic en el mismo lugar ahora cae sobre la región: la elige, no marca otro punto.
+        self.clic((x1 + x2) // 2, (y1 + y2) // 2)
+        self.assertEqual(len(self.app.puntos), 1)
+
+    def test_un_clic_fuera_del_texto_se_puede_quitar(self):
+        self.app.remove_all()
+        self.clic(5, 5)
+        self.assertEqual(self.app.puntos, [(5, 5)])
+        self.assertEqual(self.app.regions, [])
+        self.clic(6, 5)
+        self.assertEqual(self.app.puntos, [], 'un clic sobre el punto lo quita')
+
+    def test_un_punto_no_agrega_la_hoja_entera(self):
+        self.app.remove_all()
+        alto, ancho = self.app.original.shape[:2]
+        _, papel, pagina = self.app._deteccion_de_hoja()
+        gigante = A.Region(0, 0, ancho, alto, confianza=0.4)
+        self.app._candidatos[id(self.app.original)] = (
+            self.app.original,
+            [gigante],
+            papel,
+            pagina,
+        )
+        x1, y1, x2, y2 = TEXTOS[1]
+        self.clic((x1 + x2) // 2, (y1 + y2) // 2)
+        self.assertEqual(len(self.app.regions), 1, 'la búsqueda local lo encuentra')
+        r = self.app.regions[0]
+        self.assertLess(r.w * r.h, 0.1 * ancho * alto)
+
+    def test_un_clic_en_un_globo_que_ya_tiene_region_lo_dice(self):
+        self.app.remove_all()
+        x1, y1, x2, y2 = TEXTOS[1]
+        self.clic((x1 + x2) // 2, (y1 + y2) // 2)
+        self.clic((x1 + x2) // 2, y1 - 25)  # papel del mismo globo, fuera del texto
+        self.assertEqual(len(self.app.regions), 1)
+        self.assertIn('ya tiene su región', self.app.message.cget('text'))
+
+    def test_el_analisis_se_guarda_solo_para_la_hoja_abierta(self):
+        self.abrir_cola()
+        for k in range(3):
+            self.app.ir_a_hoja(k)
+            self.app._deteccion_de_hoja()
+        self.assertEqual(len(self.app._candidatos), 1)
+
+    def test_una_zona_grande_sin_texto_no_se_vuelve_region(self):
+        self.app.remove_all()
+        self.app.original[:] = 255
+        self.app._candidatos = {}
+        alto, ancho = self.app.original.shape[:2]
+        self.assertEqual(self.app.add_zone((5, 5, ancho - 5, alto - 5)), [])
+        self.assertEqual(self.app.regions, [])
+        # Una zona del tamaño de un globo sí se usa tal cual.
+        self.assertEqual(len(self.app.add_zone((100, 100, 220, 200))), 1)
+
+    def test_segundo_clic_sobre_una_region_dudosa_la_confirma(self):
+        self.app.remove_all()
+        r = self.app.add_region((100, 400, 300, 600))
+        r.confianza = 0.35
+        r.origin = 'Detectada'
+        self.app.selected_indices, self.app.focus_index = set(), None
+        self.clic(200, 500)
+        self.assertEqual(self.app.focus_index, 0)
+        self.assertEqual(r.confianza, 0.35, 'el primer clic solo la elige')
+        self.clic(200, 500)
+        self.assertEqual(r.confianza, 1.0)
+        self.assertEqual(len(self.app.puntos), 1)
+
+    def test_cada_hoja_guarda_sus_puntos(self):
+        self.abrir_cola()
+        self.clic(5, 5)
+        self.app.ir_a_hoja(1)
+        self.assertEqual(self.app.puntos, [])
+        self.app.ir_a_hoja(0)
+        self.assertEqual(self.app.puntos, [(5, 5)])
+
     # --- vistas ----------------------------------------------------------
     def test_la_vista_no_se_recalcula_al_mover_pero_si_al_cambiar_la_mascara(self):
         self.app.render_views()

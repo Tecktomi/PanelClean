@@ -5,12 +5,18 @@ Ejecutar desde la raíz del repositorio:
 """
 
 import math
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
+import cv2
 import numpy as np
 
+from evaluacion import cajas as K
 from evaluacion import calibrar_selector as C
+from evaluacion import entrenar_detector as D
+from evaluacion import horizontales
 from evaluacion import evaluar as E
 from evaluacion import metricas as M
 from evaluacion import muestreo
@@ -300,6 +306,107 @@ class MuestreoTest(unittest.TestCase):
             n, total = por_estrato[self.estratos[c]]
             self.assertEqual(n, 1)
             self.assertEqual(pesos[c], total)
+
+
+class DetectorTest(unittest.TestCase):
+    """Entrenamiento del detector de texto (entrenar_detector.py)."""
+
+    def fila(self, grupo, valor, es_texto):
+        return {
+            'grupo': grupo,
+            'es_texto': str(es_texto),
+            **{r: str(valor) for r in V.RASGOS_TEXTO},
+        }
+
+    def test_el_modelo_entrenado_se_puede_guardar_y_leer(self):
+        X = np.random.default_rng(0).random((200, len(V.RASGOS_TEXTO)), np.float32)
+        y = (X[:, 0] > 0.5).astype(np.int32)
+        modelo = D.entrenar(X, y)
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / 'modelo.yml'
+            D.guardar(modelo, ruta)
+            leido = V.cargar_modelo(ruta)
+            V._modelos.pop(ruta, None)
+        p = V.probabilidad_de_texto(leido, X)
+        self.assertTrue(np.allclose(p, V.probabilidad_de_texto(modelo, X)))
+        self.assertGreater(((p >= 0.5) == (y == 1)).mean(), 0.9)
+
+    def test_lo_reservado_nunca_se_usa_para_entrenar(self):
+        # Cada grupo tiene medidas propias; lo reservado, de 100 en adelante.
+        filas = [
+            self.fila(g, b + k, k % 2)
+            for g, b in {'a': 0, 'b': 10, D.LIBRO_PRUEBA: 100}.items()
+            for k in range(6)
+        ]
+        propias = [
+            self.fila(g, b + k, k % 2)
+            for g, b in {'mi_manga': 20, 'serie_reservada': 200}.items()
+            for k in range(6)
+        ]
+        vistos = []
+        original = D.entrenar
+
+        def espia(X, y):
+            vistos.append(set(X[:, 0].tolist()))
+            return original(X, y)
+
+        with mock.patch.object(D, 'entrenar', espia):
+            p, pp, _ = D.validacion_cruzada(filas, propias, {'serie_reservada'})
+        self.assertEqual((len(p), len(pp)), (len(filas), len(propias)))
+        self.assertTrue(all(max(v) < 100 for v in vistos))
+        # Final, sin «a», sin «b» y sin «mi_manga».
+        self.assertEqual(len(vistos), 4)
+        self.assertTrue(any(not v & {20.0, 21.0} for v in vistos), 'sin mi_manga')
+
+    def test_las_paginas_propias_pesan_mas_que_una_vez(self):
+        filas = [self.fila('a', k, k % 2) for k in range(100)]
+        propias = [self.fila('mi_manga', 500 + k, k % 2) for k in range(4)]
+        with mock.patch.object(D, 'entrenar') as entrenar:
+            D.entrenar_con(filas, propias)
+        X, y = entrenar.call_args.args
+        self.assertEqual(int((X[:, 0] >= 500).sum()), 40)  # 4 ejemplos × 10
+        self.assertEqual(len(X), len(y))
+
+    def test_una_region_gigante_no_es_texto_aunque_su_centro_caiga_en_uno(self):
+        texto = (100, 100, 150, 200)
+        self.assertEqual(K.texto_del_candidato((95, 95, 155, 205), [texto]), 0)
+        self.assertEqual(K.texto_del_candidato((0, 0, 250, 300), [texto]), -1)
+        self.assertFalse(K.acierta((0, 0, 250, 300), texto))
+
+    def test_un_candidato_que_cubre_dos_globos_unidos_es_texto(self):
+        textos = [(0, 0, 50, 100), (60, 0, 110, 100)]
+        self.assertEqual(K.texto_del_candidato((0, 0, 110, 100), textos), 0)
+
+    def test_lo_que_se_ignora_no_cuenta_como_no_texto(self):
+        img = np.full((400, 400, 3), 255, np.uint8)
+        for k, letra in enumerate('ABC'):
+            cv2.putText(
+                img,
+                letra,
+                (60 + 40 * k, 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.2,
+                (0, 0, 0),
+                4,
+            )
+        comun = {'grupo': 'g', 'pagina': 'p', 'tipo': 'propia'}
+        caja = (50, 80, 190, 135)
+        self.assertEqual(
+            [f['es_texto'] for f in D.medir_pagina(img, [caja], [], comun)], [1]
+        )
+        self.assertEqual(
+            [f['es_texto'] for f in D.medir_pagina(img, [], [], comun)], [0]
+        )
+        self.assertEqual(D.medir_pagina(img, [], [caja], comun), [])
+
+    def test_la_traduccion_simulada_es_reproducible(self):
+        img = np.full((300, 300, 3), 255, np.uint8)
+        textos = [{'x': 100, 'y': 60, 'w': 90, 'h': 160, 'text_en': 'hello there'}]
+        a, ca = horizontales.traducir(img, textos, horizontales.azar('obra', 3))
+        b, cb = horizontales.traducir(img, textos, horizontales.azar('obra', 3))
+        self.assertTrue(np.array_equal(a, b))
+        self.assertEqual(ca, cb)
+        self.assertLess(a.min(), 100, 'debe haber texto escrito')
 
 
 if __name__ == '__main__':

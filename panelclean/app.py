@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import shutil
 import sys
 from functools import lru_cache
@@ -23,9 +23,16 @@ from .vision import (
     bgr_from_file,
     write_png,
     bounded_region,
-    detect_bubbles,
     iou_rect,
     texto_en_zona,
+    puntuar_candidatos,
+    papel_de_pagina,
+    elegir_texto,
+    preparar_pagina,
+    regiones_del_punto,
+    buscar_en_punto,
+    demasiado_grande,
+    CONFIANZA_LIMPIAR,
     generate_mask,
     describe_background,
     clean_region,
@@ -258,6 +265,7 @@ CAMPOS_HOJA = (
     'zoom',
     'panx',
     'pany',
+    'puntos',
 )
 PASOS_AL_SALIR = 3  # pasos de «Deshacer» que conserva una hoja que no está abierta
 ALTO_MINIATURA = 62  # px, en la tira de hojas
@@ -285,6 +293,7 @@ class Hoja:
     zoom: float = 1.0
     panx: float = 0.0
     pany: float = 0.0
+    puntos: list = field(default_factory=list)  # (x, y) donde el usuario marcó texto
     procesada: bool = False
     exportada: bool = False
 
@@ -340,6 +349,11 @@ class PanelCleanApp:
         # Los ids nunca se reutilizan, así deshacer no confunde regiones nuevas con antiguas.
         self.next_id = 1
         self.source_path = ''
+        # Puntos (x, y) donde el usuario indicó que hay texto (ver marcar_punto).
+        self.puntos: list[tuple[int, int]] = []
+        self._candidatos = (
+            {}
+        )  # candidatos puntuados de cada página (ver _deteccion_de_hoja)
         self.hojas: list[Hoja] = []
         self.actual: int | None = None
         self._cola: list[int] = []  # hojas que faltan en «Procesar todas»
@@ -592,10 +606,10 @@ class PanelCleanApp:
         self._cabecera_panel(panel, 'Regiones', '‹', 'left')
         self._button(
             panel,
-            'Detectar globos',
+            'Detectar texto',
             self.auto_detect,
-            help_text='Búsqueda experimental de globos en toda la página; falla con estilos de dibujo '
-            'distintos. Es más seguro encerrar cada globo con el ratón: la selección se ajusta sola al texto.',
+            help_text='Busca el texto de toda la página. Las regiones dudosas quedan en naranja y no se '
+            'limpian solas. Un clic sobre un globo marca un punto: confirma el texto que hay ahí.',
         ).pack(fill='x', padx=16, pady=(0, 10))
 
         # Controles de abajo: se empaquetan antes que la lista para que ella sea
@@ -724,7 +738,9 @@ class PanelCleanApp:
         self.info_dark = self._label(card, 'Tono oscuro  —', 9, 'muted')
         self.info_dark.pack(anchor='w', padx=12, pady=2)
         self.info_pixels = self._label(card, 'Máscara  —', 9, 'muted')
-        self.info_pixels.pack(anchor='w', padx=12, pady=(2, 12))
+        self.info_pixels.pack(anchor='w', padx=12, pady=2)
+        self.info_conf = self._label(card, 'Texto  —', 9, 'muted')
+        self.info_conf.pack(anchor='w', padx=12, pady=(2, 12))
         self._group(cuerpo, 'Limpieza')
         self._combo(
             cuerpo,
@@ -1142,6 +1158,7 @@ class PanelCleanApp:
             self.hojas.extend(nuevas)
         else:
             self.hojas, self.actual, primera = nuevas, None, 0
+            self._candidatos = {}
         self._mostrar_hoja(primera)
         if len(nuevas) > 1:
             self._set_status(
@@ -1221,43 +1238,100 @@ class PanelCleanApp:
         hoja.exportada = False
         hoja.procesada = hoja.procesada or procesada
 
-    @staticmethod
-    def _rect_overlap(a, b):
-        """Fracción del rectángulo más chico que queda cubierta por el otro (de 0 a 1)."""
-        x1, y1 = max(a.x, b.x), max(a.y, b.y)
-        x2, y2 = min(a.x + a.w, b.x + b.w), min(a.y + a.h, b.y + b.h)
-        area = max(0, x2 - x1) * max(0, y2 - y1)
-        return area / max(1, min(a.w * a.h, b.w * b.h))
-
     def auto_detect(self):
-        """Agrega como regiones los globos que encuentra detect_bubbles, sin repetir los que ya están."""
+        """Busca el texto de la página con el detector entrenado y agrega las regiones
+        que propone, sin repetir las que ya están. Los puntos marcados confirman el
+        texto que tienen cerca; las regiones dudosas quedan en naranja."""
         if self.original is None:
             return
-        nuevas = self._agregar_encontradas(detect_bubbles(self.original))
+        nuevas = self._detectar_en_hoja()
         self.refresh_regions()
         self.render_views()
-        self._set_status(
-            f'{len(nuevas)} posibles globos añadidos. Selecciona las letras dentro de cada globo para mayor precisión.'
+        dudosas = sum(r.confianza < CONFIANZA_LIMPIAR for r in nuevas)
+        texto = f'{len(nuevas)} región(es) de texto encontradas'
+        if dudosas:
+            texto += (
+                f'; {dudosas} en naranja pueden no ser texto: revísalas, quítalas o '
+                'marca un punto sobre ellas'
+            )
+        self._set_status(texto + '. Luego crea las máscaras o limpia.')
+
+    def _deteccion_de_hoja(self):
+        """(candidatos con su confianza, mapa de papel de los globos, página preparada)
+        de la página abierta. Se calculan una vez por página: los puntos, las zonas y
+        «Detectar texto» los reutilizan."""
+        guardado = self._candidatos.get(id(self.original))
+        if guardado is None or guardado[0] is not self.original:
+            pagina = preparar_pagina(self.original)
+            papel = papel_de_pagina(self.original, pagina)
+            candidatos = puntuar_candidatos(self.original, papel=papel, pagina=pagina)
+            guardado = (self.original, candidatos, papel, pagina)
+            # Solo el de la hoja abierta: con una cola larga pesaría demasiado.
+            self._candidatos = {id(self.original): guardado}
+        return guardado[1:]
+
+    def _detectar_en_hoja(self):
+        """Agrega a la hoja abierta las regiones que propone el detector, teniendo en
+        cuenta los puntos marcados. Devuelve las regiones nuevas."""
+        candidatos, papel, _ = self._deteccion_de_hoja()
+        propuestas = elegir_texto(candidatos, tuple(self.puntos), papel)
+        return self._agregar_encontradas(propuestas)
+
+    def marcar_punto(self, punto):
+        """Un clic fuera de las regiones marca un punto donde hay texto (o quita el
+        punto que haya ahí).
+
+        El texto del globo donde cae el punto se agrega como región confirmada, y una
+        región dudosa que ya estaba ahí deja de serlo. Si el detector no había
+        propuesto nada ahí, se busca alrededor del punto (buscar_en_punto); y si
+        tampoco aparece, el punto queda como pista para «Detectar texto».
+        """
+        escala = self._mapping.get('left', (1.0, 0, 0))[0]
+        radio = max(3.0, 9 / max(escala, 1e-6))
+        for p in self.puntos:
+            if math.hypot(p[0] - punto[0], p[1] - punto[1]) <= radio:
+                self.puntos.remove(p)
+                self.render_views()
+                self._set_status('Punto quitado.')
+                return
+        self.puntos.append(tuple(punto))
+        candidatos, papel, pagina = self._deteccion_de_hoja()
+        del_punto = regiones_del_punto(candidatos, punto, papel)
+        if not del_punto and not regiones_del_punto(self.regions, punto, papel):
+            del_punto = buscar_en_punto(self.original, punto, pagina)
+        previas = list(self.regions)
+        nuevas = self._agregar_encontradas(
+            [replace(r, confianza=1.0) for r in del_punto]
         )
+        confirmadas = []
+        for r in regiones_del_punto(previas, punto, papel):
+            if r.confianza < 1:
+                r.confianza = 1.0
+                if r.mask is not None:
+                    describe_background(self.original, r)
+                confirmadas.append(r)
+        self.refresh_regions()
+        self.render_views()
+        if nuevas or confirmadas:
+            nombres = ', '.join(self._nombre(r) for r in nuevas + confirmadas)
+            self._set_status(f'Texto confirmado en el punto: {nombres}.')
+        elif del_punto or regiones_del_punto(previas, punto, papel):
+            self._set_status('El texto de ese globo ya tiene su región.')
+        else:
+            self._set_status(
+                'No encontré texto en ese punto. Si lo hay, desmarca «Ajustar al '
+                'texto» y enciérralo con un rectángulo ajustado a las letras.'
+            )
 
-    def _agregar_encontradas(self, encontradas, ajustadas=False):
-        """Suma a la hoja las regiones encontradas que no repiten una existente, y las
-        deja elegidas. Devuelve las que se sumaron.
-
-        Un globo detectado se descarta si cae sobre una región que ya está. Un bloque
-        ajustado al texto (ajustadas=True) solo si es casi el mismo rectángulo que otra
-        región: dentro de un globo grande ya marcado sí se agrega, porque es más preciso.
+    def _agregar_encontradas(self, encontradas):
+        """Suma a la hoja las regiones encontradas (por el detector, en una zona o en
+        un punto) que no repiten una existente, y las deja elegidas. Devuelve las que
+        se sumaron. Solo se descarta un rectángulo casi igual a otra región (IoU >
+        0,5): uno ajustado al texto dentro de una región grande sí se agrega.
         """
         nuevas = []
         for candidata in encontradas:
-            if any(
-                (
-                    iou_rect(candidata, r) > 0.5
-                    if ajustadas
-                    else self._rect_overlap(candidata, r) > 0.5
-                )
-                for r in self.regions
-            ):
+            if any(iou_rect(candidata, r) > 0.5 for r in self.regions):
                 continue
             candidata.id = self._new_id()
             candidata.numero = self._nuevo_numero()
@@ -1336,6 +1410,7 @@ class PanelCleanApp:
             self.info_entropy.configure(text='Entropía  —')
             self.info_dark.configure(text='Tono oscuro  —')
             self.info_pixels.configure(text='Máscara  —')
+            self.info_conf.configure(text='Texto  —', fg=C['muted'])
             return
         if r.mask is not None:
             describe_background(self.original, r)
@@ -1350,6 +1425,15 @@ class PanelCleanApp:
         self.info_pixels.configure(
             text=f'Máscara  {cv2.countNonZero(r.mask) if r.mask is not None else 0:,} px'
         )
+        if r.origin == 'Detectada' and r.confianza < 1:
+            dudosa = r.confianza < CONFIANZA_LIMPIAR
+            self.info_conf.configure(
+                text=f'Texto  {r.confianza:.0%} seguro'
+                + ('  ·  revisar' if dudosa else ''),
+                fg=C['warn'] if dudosa else C['muted'],
+            )
+        else:
+            self.info_conf.configure(text='Texto  confirmado', fg=C['muted'])
 
     def on_options_changed(self):
         """Avisa que hay que recalcular las máscaras tras cambiar un ajuste."""
@@ -1503,7 +1587,14 @@ class PanelCleanApp:
             for i in range(len(self.regions) - 1, -1, -1):
                 r = self.regions[i]
                 if r.contains(*point):
-                    if event.state & 0x0004:
+                    ctrl = bool(event.state & 0x0004)
+                    ya_elegida = self.selected_indices == {i} and self.focus_index == i
+                    if ya_elegida and not ctrl and r.confianza < CONFIANZA_LIMPIAR:
+                        # Segundo clic sobre una región dudosa: el usuario confirma
+                        # que es texto (queda un punto ahí).
+                        self.marcar_punto(point)
+                        return
+                    if ctrl:
                         if i in self.selected_indices:
                             self.selected_indices.remove(i)
                         else:
@@ -1524,7 +1615,14 @@ class PanelCleanApp:
                         self.method.set(rr.method_override)
                     self.refresh_regions()
                     self.render_views()
+                    if rr is not None and rr.confianza < CONFIANZA_LIMPIAR:
+                        self._set_status(
+                            f'{self._nombre(rr)} puede no ser texto ({rr.confianza:.0%} '
+                            'seguro). Si lo es, vuelve a hacer clic sobre ella para '
+                            'confirmarlo; si no, pulsa «Quitar».'
+                        )
                     return
+            self.marcar_punto(point)
         else:
             try:
                 self.add_zone((start[0], start[1], point[0], point[1]))
@@ -1546,20 +1644,29 @@ class PanelCleanApp:
 
         Con «Ajustar al texto», el rectángulo es solo la zona donde buscar: se crea una
         región ajustada por cada bloque de texto en globos que haya adentro
-        (texto_en_zona), sin repetir las que ya existen. Si no encuentra ninguno, o la
-        casilla está desmarcada, usa el rectángulo tal cual. Devuelve las regiones nuevas.
+        (texto_en_zona), sin repetir las que ya existen. Si no encuentra ninguno usa el
+        rectángulo tal cual, salvo que sea demasiado grande para ser solo texto. Con la
+        casilla desmarcada siempre lo usa tal cual. Devuelve las regiones nuevas.
         """
         if not self.ajustar.get():
             return [self.add_region(xyxy)]
         bloques = texto_en_zona(self.original, xyxy)
         if not bloques:
+            ancho, alto = abs(xyxy[2] - xyxy[0]), abs(xyxy[3] - xyxy[1])
+            if demasiado_grande(ancho, alto, self.original.shape):
+                self._set_status(
+                    'No encontré texto en esa zona y es muy grande para tomarla entera '
+                    'como región. Encierra un globo por vez, o desmarca «Ajustar al '
+                    'texto» y marca solo las letras.'
+                )
+                return []
             region = self.add_region(xyxy)
             self._set_status(
                 f'No se encontró texto en globos dentro de la zona; {self._nombre(region)} '
                 'usa el rectángulo tal como lo marcaste.'
             )
             return [region]
-        nuevas = self._agregar_encontradas(bloques, ajustadas=True)
+        nuevas = self._agregar_encontradas(bloques)
         if nuevas:
             self.method.set('Automático')
         self.refresh_regions()
@@ -1765,10 +1872,11 @@ class PanelCleanApp:
     def procesar_todas(self):
         """Limpia en automático todas las hojas de la cola, una tras otra.
 
-        Cada hoja usa sus regiones; en las que no tienen ninguna, si el usuario lo
-        acepta, se buscan globos (detect_bubbles, experimental). Se crean las máscaras
-        que falten y cada región se limpia con su método (Automático por defecto):
-        las dudosas quedan sin limpiar, para revisarlas. Se procesa una hoja por vez
+        Cada hoja usa sus regiones; en las que no tienen ninguna se busca el texto
+        con el detector (y los puntos marcados en ella). Se crean las máscaras que
+        falten y cada región se limpia con su método (Automático por defecto): las
+        dudosas, y las que el detector no está seguro de que sean texto, quedan sin
+        limpiar, para revisarlas. Se procesa una hoja por vez
         con after(), así la ventana responde y se ve el avance; pulsar otra vez el
         botón («Detener») vacía la cola.
         """
@@ -1779,19 +1887,7 @@ class PanelCleanApp:
         if not self.hojas:
             return
         self._guardar_hoja()
-        sin_regiones = sum(not h.regions for h in self.hojas)
-        buscar = True
-        if sin_regiones:
-            buscar = messagebox.askyesnocancel(
-                'Hojas sin regiones',
-                f'{sin_regiones} de {len(self.hojas)} hojas no tienen regiones marcadas.\n\n'
-                '¿Buscar globos en ellas automáticamente? La búsqueda es experimental: '
-                'revisa esas hojas al terminar.\n\n'
-                'Sí: buscar y limpiar.   No: procesar solo las hojas con regiones.',
-            )
-            if buscar is None:
-                return
-        self._cola = [i for i, h in enumerate(self.hojas) if h.regions or buscar]
+        self._cola = list(range(len(self.hojas)))
         self._cola_total = len(self._cola)
         self._detenida = False
         if self._cola:
@@ -1810,7 +1906,7 @@ class PanelCleanApp:
         self._set_status(f'Procesando hojas: {hechas} de {self._cola_total}…')
         self.root.update_idletasks()
         if not self.regions:
-            self._agregar_encontradas(detect_bubbles(self.original))
+            self._detectar_en_hoja()
         if self.regions:
             self._perform_clean(list(self.regions), preguntar=False)
         else:
@@ -2138,7 +2234,12 @@ class PanelCleanApp:
             if key == 'left':
                 for i, r in enumerate(self.regions):
                     selected = i in self.selected_indices
-                    color = C['accent'] if selected else C['region']
+                    dudosa = r.confianza < CONFIANZA_LIMPIAR
+                    color = (
+                        C['accent']
+                        if selected
+                        else (C['warn'] if dudosa else C['region'])
+                    )
                     lx, ty = ox + r.x * scale, oy + r.y * scale
                     rx, by = lx + r.w * scale, ty + r.h * scale
                     canvas.create_rectangle(
@@ -2153,6 +2254,17 @@ class PanelCleanApp:
                         text=self._nombre(r),
                         fill=C['on_accent'],
                         font=fuente(9, True),
+                    )
+                for px, py in self.puntos:
+                    cx, cy = ox + px * scale, oy + py * scale
+                    canvas.create_oval(
+                        cx - 6,
+                        cy - 6,
+                        cx + 6,
+                        cy + 6,
+                        fill=C['accent'],
+                        outline=C['on_accent'],
+                        width=2,
                     )
 
     def _render_sin_imagen(self):

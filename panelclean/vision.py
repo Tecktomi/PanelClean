@@ -1,7 +1,8 @@
 """Pipeline PDI: contornos, segmentación, componentes, morfología y reconstrucción."""
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Optional
 import cv2
 import numpy as np
@@ -47,6 +48,10 @@ class Region:
     suggested_method: str = ''
     method_override: str = 'Automático'
     mask_edited: bool = False
+    # Probabilidad de que sea texto según el detector (1.0 si la marcó el usuario).
+    confianza: float = 1.0
+    # Zona de papel (globo) que rodea a una región detectada; ver papel_de_pagina.
+    papel: int = 0
     review_reason: str = ''
     last_method: str = ''
     applied_radius: Optional[int] = None
@@ -170,7 +175,12 @@ def detect_bubbles(image: np.ndarray) -> list[Region]:
 
 
 # Parámetros de texto_en_zona. Se ajustaron con zonas simuladas alrededor de los
-# textos de las cuatro obras de desarrollo de OpenMantra, nunca con la de prueba.
+# textos de las cuatro obras de desarrollo de OpenMantra. Los tamaños en píxeles
+# valen para la página ya preparada (ver Pagina), no para el archivo original.
+LADO_TRABAJO = 830  # px: ancho de hoja con que se busca texto (el de OpenMantra)
+PAPEL_BLANCO = 250  # gris al que se lleva el papel de la página
+LETRA_MAXIMA = 0.07  # del lado menor de la hoja: una pieza mayor no es una letra
+BLOQUE_MAXIMO = 0.15  # de la hoja: ningún texto de desarrollo pasa de 0,10
 PAPEL_CLARO = 215  # gris desde el que un píxel cuenta como papel del globo
 PAPEL_MINIMO = 300  # px: zonas de papel más chicas no se revisan
 TINTA_VISIBLE = 160  # piezas cuyo punto más oscuro es más claro no son tinta
@@ -178,6 +188,7 @@ TINTA_NEGRA = 110  # un grupo de letras tiene algún píxel así de oscuro…
 TRAZO_GRUESO = 1.5  # …en una pieza con algún punto a esta distancia (px) de su borde
 UNION_LETRAS = 1.2  # piezas más cercanas que esto (en tamaños de letra) son un bloque
 MARGEN_BLOQUE = 0.25  # margen alrededor de cada bloque, en tamaños de letra
+ALTO_PALABRA = 9  # px: alto mínimo de una palabra cuyas letras se tocan
 
 
 def _encerrado(forma: np.ndarray) -> np.ndarray:
@@ -236,25 +247,109 @@ def _huecos_del_papel(gris: np.ndarray) -> list[tuple[int, int, np.ndarray]]:
     return salida
 
 
-def texto_en_zona(image: np.ndarray, xyxy: tuple[int, int, int, int]) -> list[Region]:
-    """Bloques de texto dentro de una zona marcada a grandes rasgos.
+@dataclass
+class Pagina:
+    """Página preparada para buscar texto, con un tono de papel y un tamaño comunes.
 
-    El usuario no necesita ajustar el rectángulo a las letras: basta con encerrar
-    el globo (o varios). Las letras de un globo son los «huecos» de su papel: lo
-    oscuro que el papel blanco rodea por completo. Por eso no importa lo que haya
-    alrededor del globo (fondo negro, tramas, dibujo), que en cambio desvía el
-    umbral de Otsu calculado sobre la zona entera y deja fuera las letras finas.
-
-    Los huecos se agrupan por globo y por cercanía, según el tamaño de letra que
-    se mide en cada globo. Se descartan los grupos sin tinta negra de trazo
-    grueso (pelos, gotas de sudor y líneas finas del dibujo también son huecos
-    del papel) y las piezas sueltas chicas o alargadas. Cada bloque se devuelve
-    como una región ajustada, con un margen de un cuarto de letra. Si no hay
-    texto en globos (por ejemplo, texto sobre el dibujo), la lista queda vacía.
+    Los escaneos varían: papel gris o amarillento, tinta lavada, más o menos
+    resolución. Sin esto, con un papel apenas gris no había ningún «papel blanco»
+    y no se encontraba nada.
+    gris: gris suavizado con el papel en PAPEL_BLANCO, a la escala de trabajo.
+    limpio: lo mismo sin suavizar. crudo: el gris sin aclarar, a esa escala.
+    escala: píxeles de trabajo por píxel del archivo.
     """
-    zona = bounded_region(image, xyxy)
-    roi = image[zona.y : zona.y + zona.h, zona.x : zona.x + zona.w]
-    gris = cv2.GaussianBlur(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), (3, 3), 0)
+
+    gris: np.ndarray
+    limpio: np.ndarray
+    crudo: np.ndarray
+    escala: float
+
+
+def nivel_de_papel(gris: np.ndarray) -> int:
+    """Gris del papel: el tono claro más claro que reúne al menos un 3 % de los
+    píxeles (255 si no hay ninguno desde 130, por ejemplo en una hoja negra)."""
+    masa = np.bincount(gris.ravel(), minlength=256) / max(1, gris.size)
+    masa = np.convolve(masa, np.ones(9), 'same')  # cada tono con sus 4 vecinos
+    for nivel in range(255, 129, -1):
+        if masa[nivel] >= 0.03:
+            while nivel > 130 and masa[nivel - 1] > masa[nivel]:
+                nivel -= 1
+            return nivel
+    return 255
+
+
+def _estirar(gris: np.ndarray, negro: float, papel: float) -> np.ndarray:
+    """Lleva el tono `negro` a 0 y el tono `papel` a PAPEL_BLANCO."""
+    estirado = (
+        (gris.astype(np.float32) - negro) * PAPEL_BLANCO / max(1.0, papel - negro)
+    )
+    return np.clip(estirado, 0, 255).astype(np.uint8)
+
+
+def _negro_lavado(gris: np.ndarray) -> float:
+    """Tono de la tinta si está lavada (más clara que 40); si no, 0.
+
+    Se mira el 0,05 % más oscuro: basta un texto chico con tinta negra, aunque el
+    resto de la hoja sea claro, para saber que la tinta no está lavada.
+    """
+    negro = float(np.percentile(gris, 0.05))
+    return min(negro, 90.0) if negro > 40 else 0.0
+
+
+def aclarar_papel(gris: np.ndarray) -> np.ndarray:
+    """Página en gris con el papel casi blanco y la tinta negra. Una página con buen
+    contraste (papel desde 240 y tinta hasta 40) queda igual."""
+    papel, negro = nivel_de_papel(gris), _negro_lavado(gris)
+    if papel >= 240 and negro == 0:
+        return gris
+    return _estirar(gris, negro, papel)
+
+
+def preparar_pagina(image: np.ndarray) -> Pagina:
+    """Prepara la página para buscar texto (ver Pagina).
+
+    Una hoja doble se mide por la mitad de su ancho. Las imágenes chicas (menos de
+    480 px) se toman como recortes y no se agrandan.
+    """
+    crudo = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    alto, ancho = crudo.shape
+    hoja = ancho / 2 if ancho > 1.2 * alto else min(alto, ancho)
+    escala = LADO_TRABAJO / hoja
+    if hoja < 480 or 0.75 < escala < 1.35:
+        escala = 1.0
+    else:
+        crudo = cv2.resize(
+            crudo,
+            None,
+            fx=escala,
+            fy=escala,
+            interpolation=cv2.INTER_AREA if escala < 1 else cv2.INTER_CUBIC,
+        )
+    limpio = aclarar_papel(crudo)
+    return Pagina(cv2.GaussianBlur(limpio, (3, 3), 0), limpio, crudo, escala)
+
+
+def _region_de(image: np.ndarray, caja: tuple, escala: float, origin: str) -> Region:
+    """Región del archivo que corresponde a una caja (x1, y1, x2, y2) de trabajo."""
+    x1, y1 = int(caja[0] / escala), int(caja[1] / escala)
+    x2, y2 = int(np.ceil(caja[2] / escala)), int(np.ceil(caja[3] / escala))
+    return bounded_region(image, (x1, y1, x2, y2), origin=origin)
+
+
+def _bloques_de_texto(gris: np.ndarray, pagina: Pagina) -> list[tuple]:
+    """Bloques de texto (x1, y1, x2, y2) de un recorte de la página preparada.
+
+    gris tiene el papel en blanco; las letras son los huecos de ese papel. Los
+    huecos se agrupan por globo y por cercanía, según el tamaño de letra que se
+    mide en cada globo (con un tope: si no, en una zona de papel con pocas figuras
+    grandes adentro se tomaban las figuras por letras y se unía la hoja entera).
+    Se descartan los grupos sin tinta negra de trazo grueso (pelos, gotas de sudor
+    y líneas finas del dibujo también son huecos del papel), las piezas sueltas
+    chicas o alargadas y los bloques más grandes que cualquier texto.
+    """
+    alto, ancho = gris.shape
+    alto_p, ancho_p = pagina.gris.shape
+    tope = max(40.0, LETRA_MAXIMA * min(alto_p, ancho_p))
     globos = []
     for x, y, huecos in _huecos_del_papel(gris):
         n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(huecos, 8)
@@ -283,6 +378,7 @@ def texto_en_zona(image: np.ndarray, xyxy: tuple[int, int, int, int]) -> list[Re
     ):
         # Tamaño de letra: el de este globo si hay piezas suficientes para medirlo.
         letra = float(np.percentile(propios, 75)) if len(propios) >= 4 else letra_zona
+        letra = min(letra, tope)
         sirve = tinta & (lado <= 3 * letra)
         de_letra = sirve & (oscuro <= TINTA_NEGRA) & (grosor >= TRAZO_GRUESO)
         piezas = np.where(sirve[etiquetas], 255, 0).astype(np.uint8)
@@ -305,24 +401,442 @@ def texto_en_zona(image: np.ndarray, xyxy: tuple[int, int, int, int]) -> list[Re
             largo, corto = max(x2 - x1, y2 - y1), min(x2 - x1, y2 - y1)
             if largo < 0.5 * letra or not de_letra[ids].any():
                 continue
-            if len(ids) == 1 and (largo < 0.8 * letra or largo > 3 * corto):
-                continue  # trazo suelto: una mota o una línea del dibujo
+            # Una pieza suelta: una mota, una línea del dibujo… o una palabra corta
+            # en letra latina, cuyas letras se tocan («HEY»): alargada, pero con el
+            # alto de una letra.
+            if len(ids) == 1 and (
+                largo < 0.8 * letra
+                or (largo > 3 * corto and (corto < ALTO_PALABRA or largo > 8 * corto))
+            ):
+                continue
+            area = (x2 - x1) * (y2 - y1)
+            if area > AREA_REVISAR and area > BLOQUE_MAXIMO * alto_p * ancho_p:
+                continue  # más grande que cualquier texto: viñeta o dibujo
             cajas.append(
                 (
-                    zona.x + max(0, x + x1 - margen),
-                    zona.y + max(0, y + y1 - margen),
-                    zona.x + min(zona.w, x + x2 + margen),
-                    zona.y + min(zona.h, y + y2 + margen),
+                    max(0, x + x1 - margen),
+                    max(0, y + y1 - margen),
+                    min(ancho, x + x2 + margen),
+                    min(alto, y + y2 + margen),
                 )
             )
+    return cajas
+
+
+def texto_en_zona(
+    image: np.ndarray,
+    xyxy: tuple[int, int, int, int],
+    pagina: Optional[Pagina] = None,
+) -> list[Region]:
+    """Bloques de texto dentro de una zona marcada a grandes rasgos.
+
+    El usuario no necesita ajustar el rectángulo a las letras: basta con encerrar
+    el globo (o varios). Las letras de un globo son los «huecos» de su papel: lo
+    oscuro que el papel blanco rodea por completo. Por eso no importa lo que haya
+    alrededor del globo (fondo negro, tramas, dibujo), que en cambio desvía el
+    umbral de Otsu calculado sobre la zona entera y deja fuera las letras finas.
+
+    Cada bloque se devuelve como una región ajustada, con un margen de un cuarto de
+    letra. Si con el tono de papel de la página no aparece nada, se prueba con el
+    de la zona (un globo gris, una sombra del escaneo). Si no hay texto en globos
+    (por ejemplo, texto sobre el dibujo), la lista queda vacía.
+    """
+    zona = bounded_region(image, xyxy)
+    pagina = preparar_pagina(image) if pagina is None else pagina
+    e = pagina.escala
+    x0, y0 = int(zona.x * e), int(zona.y * e)
+    corte = (
+        slice(y0, int(np.ceil((zona.y + zona.h) * e))),
+        slice(x0, int(np.ceil((zona.x + zona.w) * e))),
+    )
+    cajas = _bloques_de_texto(pagina.gris[corte], pagina)
+    if not cajas and pagina.gris[corte].size < pagina.gris.size:
+        propio = cv2.GaussianBlur(aclarar_papel(pagina.crudo[corte]), (3, 3), 0)
+        cajas = _bloques_de_texto(propio, pagina)
     regiones = []
-    for caja in cajas:
+    for x1, y1, x2, y2 in cajas:
         try:
-            regiones.append(bounded_region(image, caja, origin='Zona'))
+            r = _region_de(image, (x0 + x1, y0 + y1, x0 + x2, y0 + y2), e, 'Zona')
+            # Con el redondeo de la escala no debe salirse de la zona pedida.
+            regiones.append(
+                bounded_region(
+                    image,
+                    (
+                        max(r.x, zona.x),
+                        max(r.y, zona.y),
+                        min(r.x + r.w, zona.x + zona.w),
+                        min(r.y + r.h, zona.y + zona.h),
+                    ),
+                    origin='Zona',
+                )
+            )
         except ValueError:
             continue  # bloque de menos de 12 × 12 px
     regiones.sort(key=lambda r: (r.y, r.x))
     return regiones
+
+
+# ---------------------------------------------------------------------------
+# Detector de texto entrenado
+# ---------------------------------------------------------------------------
+# Los candidatos son los bloques que texto_en_zona encuentra en la página
+# entera: aparece casi todo el texto, pero también trozos de dibujo encerrados
+# por papel blanco. Cada candidato se describe con las medidas de RASGOS_TEXTO
+# y un random forest de OpenCV (cv2.ml.RTrees) da la probabilidad de que sea
+# texto. El modelo se entrena con `python -m evaluacion.entrenar_detector`
+# (OpenMantra sin la obra de prueba, más las etiquetas hechas a mano con
+# `evaluacion.etiquetar --texto`) y se guarda en modelo_texto.yml.
+
+RASGOS_TEXTO = (
+    'piezas',  # log(1 + piezas de tinta)
+    'cv_lado',  # cuánto varía el tamaño de las piezas (las letras se parecen)
+    'tinta',  # fracción del rectángulo con tinta
+    'grosor_rel',  # grosor típico del trazo, relativo al tamaño de letra
+    'cv_grosor',  # cuánto varía el grosor (el de las letras es parejo)
+    'oscuro',  # percentil 10 del gris de la tinta (las letras son negras)
+    'papel_anillo',  # fracción de papel blanco alrededor del bloque
+    'bordes_anillo',  # densidad de bordes alrededor (el dibujo tiene muchos)
+    'alargado',  # |log(ancho / alto)|: columnas o renglones de texto
+    'area_rel',  # log(área / área de la página)
+    'letra_rel',  # tamaño de letra / alto de la página
+    'en_globo',  # fracción dentro del interior de un globo de detect_bubbles
+    'huecos_max',  # huecos entre columnas o renglones (el mayor de los dos)
+    'huecos_min',  # y el menor: medidos así, no importa la orientación del texto
+    'relleno',  # cuánto llena cada pieza su rectángulo
+    'borde_pagina',  # distancia al borde de la página, relativa a su lado menor
+    'densidad',  # piezas por «casilla» de letra
+)
+MODELO_TEXTO = Path(__file__).resolve().parent / 'modelo_texto.yml'
+# Cambia cuando cambian los candidatos o sus medidas: las guardadas antes ya no sirven.
+VERSION_RASGOS = 2
+# Gris de la tinta al medir: más estricto que PAPEL_CLARO, así las letras latinas,
+# que van muy juntas, no se funden en una sola pieza por su borde suavizado.
+TINTA_PIEZA = 150
+# Umbrales elegidos con la validación cruzada por obra (ver evaluacion/README.md).
+CONFIANZA_LIMPIAR = 0.5  # desde aquí el modo automático limpia la región
+CONFIANZA_PROPONER = 0.3  # desde aquí se propone; por debajo de LIMPIAR, para revisar
+
+
+def interior_de_globos(image: np.ndarray) -> np.ndarray:
+    """Máscara (0 o 1) del interior de los globos que encuentra detect_bubbles."""
+    interior = np.zeros(image.shape[:2], np.float32)
+    for g in detect_bubbles(image):
+        if g.interior is not None:
+            zona = interior[g.y : g.y + g.h, g.x : g.x + g.w]
+            np.maximum(zona, (g.interior > 0).astype(np.float32), out=zona)
+    return interior
+
+
+def rasgos_de_texto(
+    gris: np.ndarray, caja: tuple[int, int, int, int], interior: np.ndarray
+) -> Optional[list[float]]:
+    """Medidas de RASGOS_TEXTO para el rectángulo (x1, y1, x2, y2) de la página.
+
+    gris es la página en gris suavizada (como en texto_en_zona) e interior la de
+    interior_de_globos. Devuelve None si el rectángulo no tiene tinta.
+    """
+    alto_p, ancho_p = gris.shape
+    x1, y1, x2, y2 = caja
+    w, h = x2 - x1, y2 - y1
+    sub = gris[y1:y2, x1:x2]
+    tinta = (sub <= TINTA_PIEZA).astype(np.uint8)
+    n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(tinta, 8)
+    validas = stats[1:, 4] >= 2
+    lados = np.maximum(stats[1:, 2], stats[1:, 3])[validas]
+    if lados.size == 0:
+        return None
+    medibles = lados[lados >= 3]
+    letra = float(np.percentile(medibles if medibles.size else lados, 75))
+    grosor = np.zeros(n, np.float32)
+    distancia = cv2.distanceTransform(tinta, cv2.DIST_L2, 3)
+    np.maximum.at(grosor, etiquetas.ravel(), distancia.ravel())
+    grosor = grosor[1:][validas]
+    # Anillo de medio tamaño de letra alrededor del bloque.
+    m = max(3, int(round(0.5 * letra)))
+    xa, ya = max(0, x1 - m), max(0, y1 - m)
+    xb, yb = min(ancho_p, x2 + m), min(alto_p, y2 + m)
+    anillo = np.ones((yb - ya, xb - xa), bool)
+    anillo[y1 - ya : y2 - ya, x1 - xa : x2 - xa] = False
+    entorno = gris[ya:yb, xa:xb]
+    bordes = cv2.Canny(entorno, 75, 170) > 0
+    oscuros = sub[tinta > 0]
+    huecos_x = float((tinta.sum(axis=0) == 0).mean())
+    huecos_y = float((tinta.sum(axis=1) == 0).mean())
+    cajas_piezas = np.maximum(1, stats[1:, 2] * stats[1:, 3])[validas]
+    return [
+        float(np.log1p(lados.size)),
+        float(lados.std() / max(1e-6, lados.mean())),
+        float(tinta.mean()),
+        float(np.median(grosor) / max(1.0, letra)),
+        float(grosor.std() / max(1e-6, grosor.mean())),
+        float(np.percentile(oscuros, 10)) / 255,
+        float((entorno[anillo] > PAPEL_CLARO).mean()) if anillo.any() else 0.0,
+        float(bordes[anillo].mean()) if anillo.any() else 0.0,
+        abs(float(np.log(w / h))),
+        float(np.log(w * h / (alto_p * ancho_p))),
+        letra / alto_p,
+        float(interior[y1:y2, x1:x2].mean()),
+        max(huecos_x, huecos_y),
+        min(huecos_x, huecos_y),
+        float(np.mean(stats[1:, 4][validas] / cajas_piezas)),
+        min(x1, y1, ancho_p - x2, alto_p - y2) / min(alto_p, ancho_p),
+        float(lados.size * letra * letra / (w * h)),
+    ]
+
+
+def candidatos_de_texto(
+    image: np.ndarray, pagina: Optional[Pagina] = None
+) -> tuple[list[Region], np.ndarray]:
+    """Bloques de texto de la página entera y sus medidas (una fila cada uno).
+
+    Las medidas se toman en la página preparada, así no dependen del tono ni de la
+    resolución del archivo.
+    """
+    pagina = preparar_pagina(image) if pagina is None else pagina
+    interior = interior_de_globos(cv2.cvtColor(pagina.limpio, cv2.COLOR_GRAY2BGR))
+    pares = []
+    for caja in _bloques_de_texto(pagina.gris, pagina):
+        medidas = rasgos_de_texto(pagina.gris, caja, interior)
+        if medidas is None:
+            continue
+        try:
+            pares.append((_region_de(image, caja, pagina.escala, 'Detectada'), medidas))
+        except ValueError:
+            continue  # bloque de menos de 12 × 12 px
+    pares.sort(key=lambda par: (par[0].y, par[0].x))
+    medidas = np.array([m for _, m in pares], np.float32)
+    return [r for r, _ in pares], medidas.reshape(-1, len(RASGOS_TEXTO))
+
+
+_modelos: dict = {}
+
+
+def cargar_modelo(ruta: Path = MODELO_TEXTO):
+    """Random forest guardado (o None si no existe). Se lee el texto con Python y
+    se pasa a OpenCV en memoria: así funciona aunque la ruta tenga tildes."""
+    ruta = Path(ruta)
+    if ruta not in _modelos:
+        modelo = None
+        if ruta.exists():
+            fs = cv2.FileStorage(
+                ruta.read_text(encoding='utf8'),
+                cv2.FILE_STORAGE_READ | cv2.FILE_STORAGE_MEMORY,
+            )
+            modelo = cv2.ml.RTrees_create()
+            modelo.read(fs.root())
+        _modelos[ruta] = modelo
+    return _modelos[ruta]
+
+
+def probabilidad_de_texto(modelo, medidas: np.ndarray) -> np.ndarray:
+    """Fracción de árboles del bosque que votan «texto» para cada fila de medidas."""
+    if len(medidas) == 0:
+        return np.zeros(0)
+    votos = modelo.getVotes(np.asarray(medidas, np.float32), 0)
+    clases = list(votos[0])
+    cuentas = votos[1:].astype(np.float64)
+    if 1 not in clases:
+        return np.zeros(len(medidas))
+    return cuentas[:, clases.index(1)] / np.maximum(1, cuentas.sum(axis=1))
+
+
+def _zonas_de_papel(gris: np.ndarray, area_maxima: float) -> np.ndarray:
+    """Etiqueta las zonas de papel de hasta area_maxima px (0 = tinta o papel mayor)."""
+    _, etiquetas, stats, _ = cv2.connectedComponentsWithStats(
+        (gris > PAPEL_CLARO).astype(np.uint8), connectivity=4
+    )
+    grandes = stats[:, 4] > area_maxima
+    grandes[0] = True
+    etiquetas[grandes[etiquetas]] = 0
+    return etiquetas
+
+
+def papel_de_pagina(image: np.ndarray, pagina: Optional[Pagina] = None) -> np.ndarray:
+    """Etiqueta, en píxeles del archivo, cada zona de papel del tamaño de un globo
+    (0 = tinta, o papel que ocupa más de FRACCION_PAGINA_REVISAR de la página,
+    como el fondo blanco alrededor de las viñetas)."""
+    pagina = preparar_pagina(image) if pagina is None else pagina
+    gris = pagina.gris
+    etiquetas = _zonas_de_papel(gris, FRACCION_PAGINA_REVISAR * gris.size)
+    if pagina.escala == 1:
+        return etiquetas
+    alto, ancho = image.shape[:2]
+    filas = np.minimum((np.arange(alto) * pagina.escala).astype(int), gris.shape[0] - 1)
+    cols = np.minimum((np.arange(ancho) * pagina.escala).astype(int), gris.shape[1] - 1)
+    return etiquetas[np.ix_(filas, cols)]
+
+
+def _papel_alrededor(papel: np.ndarray, caja: tuple[int, int, int, int]) -> int:
+    """Zona de papel que más rodea a la caja (x1, y1, x2, y2), en una franja de 3 px
+    a su alrededor, o 0."""
+    alto, ancho = papel.shape
+    x1, y1, x2, y2 = caja
+    xa, ya = max(0, x1 - 3), max(0, y1 - 3)
+    franja = papel[ya : min(alto, y2 + 3), xa : min(ancho, x2 + 3)].copy()
+    franja[y1 - ya : y2 - ya, x1 - xa : x2 - xa] = 0
+    cuentas = np.bincount(franja.ravel())
+    cuentas[0] = 0
+    return int(cuentas.argmax()) if cuentas.any() else 0
+
+
+def puntuar_candidatos(
+    image: np.ndarray,
+    modelo=None,
+    papel: Optional[np.ndarray] = None,
+    pagina: Optional[Pagina] = None,
+) -> list[Region]:
+    """Todos los candidatos de la página, cada uno con su confianza de ser texto
+    y la zona de papel (globo) que lo rodea.
+
+    Sin modelo entrenado, todos quedan en CONFIANZA_PROPONER: se proponen pero
+    ninguno se limpia solo.
+    """
+    pagina = preparar_pagina(image) if pagina is None else pagina
+    papel = papel_de_pagina(image, pagina) if papel is None else papel
+    regiones, medidas = candidatos_de_texto(image, pagina)
+    modelo = modelo if modelo is not None else cargar_modelo()
+    if modelo is None:
+        probabilidades = np.full(len(regiones), CONFIANZA_PROPONER)
+    else:
+        probabilidades = probabilidad_de_texto(modelo, medidas)
+    for r, p in zip(regiones, probabilidades):
+        r.confianza = float(p)
+        r.papel = _papel_alrededor(papel, (r.x, r.y, r.x + r.w, r.y + r.h))
+    return regiones
+
+
+def demasiado_grande(ancho: int, alto: int, forma_pagina: tuple[int, ...]) -> bool:
+    """Indica si un rectángulo es más grande que el texto habitual de una página:
+    más de AREA_REVISAR px y de FRACCION_PAGINA_REVISAR de la página."""
+    area = ancho * alto
+    limite = FRACCION_PAGINA_REVISAR * forma_pagina[0] * forma_pagina[1]
+    return area > AREA_REVISAR and area > limite
+
+
+def _distancia(region: Region, punto: tuple[int, int]) -> float:
+    """Distancia en píxeles del punto al rectángulo de la región (0 si está adentro)."""
+    x, y = punto
+    dx = max(region.x - x, 0, x - (region.x + region.w - 1))
+    dy = max(region.y - y, 0, y - (region.y + region.h - 1))
+    return float(np.hypot(dx, dy))
+
+
+def regiones_del_punto(
+    regiones: list[Region], punto: tuple[int, int], papel: np.ndarray
+) -> list[Region]:
+    """Regiones que confirma un punto marcado por el usuario.
+
+    Son las que están en el mismo globo que el punto (según papel_de_pagina) y, si
+    no hay ninguna, la más cercana que lo contenga o esté a pocos píxeles. Nunca
+    una región demasiado grande para ser texto: una que cubre media hoja contiene
+    casi cualquier punto, y marcar uno no significa que todo eso sea texto.
+    """
+    x, y = punto
+    posibles = [r for r in regiones if not demasiado_grande(r.w, r.h, papel.shape)]
+    dentro = 0 <= y < papel.shape[0] and 0 <= x < papel.shape[1]
+    globo = int(papel[y, x]) if dentro else 0
+    if globo:
+        del_globo = [r for r in posibles if r.papel == globo]
+        if del_globo:
+            return del_globo
+    cerca = [
+        (_distancia(r, punto), r.w * r.h, k)
+        for k, r in enumerate(posibles)
+        if _distancia(r, punto) <= max(8, 0.25 * min(r.w, r.h))
+    ]
+    if not cerca:
+        return []
+    elegida = posibles[min(cerca)[2]]
+    if elegida.papel:  # las demás del mismo globo también son texto
+        return [r for r in posibles if r.papel == elegida.papel]
+    return [elegida]
+
+
+def elegir_texto(
+    candidatos: list[Region],
+    puntos: tuple[tuple[int, int], ...] = (),
+    papel: Optional[np.ndarray] = None,
+) -> list[Region]:
+    """Candidatos que se proponen como regiones, como copias nuevas.
+
+    Un punto marcado por el usuario confirma (confianza 1) el texto de su globo
+    (ver regiones_del_punto; hace falta papel). Los candidatos sin un punto no
+    pierden nada: se proponen si su confianza llega a CONFIANZA_PROPONER.
+    """
+    confirmados = {
+        id(r) for p in puntos for r in regiones_del_punto(candidatos, p, papel)
+    }
+    elegidos = []
+    for c in candidatos:
+        confianza = 1.0 if id(c) in confirmados else c.confianza
+        if confianza >= CONFIANZA_PROPONER:
+            elegidos.append(replace(c, confianza=confianza))
+    return elegidos
+
+
+def buscar_en_punto(
+    image: np.ndarray, punto: tuple[int, int], pagina: Optional[Pagina] = None
+) -> list[Region]:
+    """Texto alrededor de un punto que marcó el usuario y que el detector no propuso.
+
+    Busca en una ventana alrededor del punto, tomando como papel el tono que hay
+    justo ahí: así sirve en un globo gris o en una parte sombreada del escaneo.
+    Devuelve los bloques del mismo globo que el punto o, si el papel del punto es
+    muy grande (no es un globo), el bloque que esté a menos de 40 px de trabajo.
+    """
+    pagina = preparar_pagina(image) if pagina is None else pagina
+    crudo, e = pagina.crudo, pagina.escala
+    alto, ancho = crudo.shape
+    px = min(ancho - 1, max(0, int(punto[0] * e)))
+    py = min(alto - 1, max(0, int(punto[1] * e)))
+    parche = crudo[max(0, py - 12) : py + 13, max(0, px - 12) : px + 13]
+    tono = float(np.percentile(parche, 90))
+    if tono < 90:
+        return []  # fondo negro: el texto blanco sobre negro no se detecta
+    lado = int(0.3 * min(alto, ancho))
+    x0, y0 = max(0, px - lado), max(0, py - lado)
+    ventana = crudo[y0 : py + lado, x0 : px + lado]
+    gris = cv2.GaussianBlur(_estirar(ventana, _negro_lavado(ventana), tono), (3, 3), 0)
+    zonas = _zonas_de_papel(gris, FRACCION_PAGINA_REVISAR * crudo.size)
+    # Papel del punto: el más repetido en el parche (el punto puede caer en una letra).
+    vx, vy = px - x0, py - y0
+    cuentas = np.bincount(
+        zonas[max(0, vy - 12) : vy + 13, max(0, vx - 12) : vx + 13].ravel()
+    )
+    cuentas[0] = 0
+    globo = int(cuentas.argmax()) if cuentas.any() else 0
+    regiones, sueltas = [], []
+    for caja in _bloques_de_texto(gris, pagina):
+        try:
+            r = _region_de(
+                image,
+                (x0 + caja[0], y0 + caja[1], x0 + caja[2], y0 + caja[3]),
+                e,
+                'Punto',
+            )
+        except ValueError:
+            continue
+        if demasiado_grande(r.w, r.h, image.shape):
+            continue
+        if globo and _papel_alrededor(zonas, caja) == globo:
+            regiones.append(r)
+        elif _distancia(r, punto) * e <= 40:
+            sueltas.append(r)
+    if regiones or not sueltas:
+        return regiones
+    return [min(sueltas, key=lambda r: _distancia(r, punto))]
+
+
+def detectar_texto(
+    image: np.ndarray, puntos: tuple[tuple[int, int], ...] = (), modelo=None
+) -> list[Region]:
+    """Detector de texto de la página: candidatos puntuados y, si los hay, los
+    puntos del usuario. Las regiones con confianza menor que CONFIANZA_LIMPIAR
+    quedan para revisión (ver describe_background)."""
+    pagina = preparar_pagina(image)
+    papel = papel_de_pagina(image, pagina)
+    candidatos = puntuar_candidatos(image, modelo, papel, pagina)
+    return elegir_texto(candidatos, tuple(puntos), papel)
 
 
 def iou_rect(a: Region, b: Region) -> float:
@@ -700,6 +1214,13 @@ def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, 
         area=area,
         page_fraction=area / (image.shape[0] * image.shape[1]),
     )
+    if method != 'Revisión manual' and region.confianza < CONFIANZA_LIMPIAR:
+        # El detector no está seguro de que sea texto: no se limpia sola.
+        method = 'Revisión manual'
+        reason = (
+            f'Puede no ser texto (confianza {region.confianza:.0%}). Si lo es, '
+            'marca un punto sobre él o elige un método a mano.'
+        )
     region.review_reason = reason
     region.variance = var
     region.edge_density = edge_density
@@ -725,7 +1246,7 @@ TONO_TINTA = (
 TEXTURA_REPARTIDA = 0.8  # fracción de la zona con variación local: más, es una trama
 
 # Una región muy grande casi nunca es solo texto: suele ser una viñeta entera
-# (por ejemplo, un candidato de «Detectar globos») y su máscara incluye dibujo.
+# (por ejemplo, un globo grande de detect_bubbles) y su máscara incluye dibujo.
 # Medido en OpenMantra: estos dos límites dejan para revisión el 84 % de las
 # regiones detectadas cuya máscara es sobre todo dibujo, y solo el 0,8 % de las
 # cajas de texto reales. Se piden ambos para no bloquear todo en una imagen
