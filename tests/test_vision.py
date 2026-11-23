@@ -255,6 +255,63 @@ class LimpiezaTest(unittest.TestCase):
         self.assertTrue(np.array_equal(out, self.img))
 
 
+def interseccion(a, b):
+    """Área común de dos rectángulos (x1, y1, x2, y2)."""
+    return max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(
+        0, min(a[3], b[3]) - max(a[1], b[1])
+    )
+
+
+def area(c):
+    return (c[2] - c[0]) * (c[3] - c[1])
+
+
+class ZonaTest(unittest.TestCase):
+    """texto_en_zona: de un rectángulo holgado a regiones ajustadas al texto."""
+
+    def test_ajusta_cada_globo_del_ejemplo(self):
+        img = V.bgr_from_file(str(DEMO))
+        for texto in (TEXTO_LISO, TEXTO_PUNTOS, TEXTO_TRAMA):
+            # Zona holgada: 40 px más por lado, con dibujo, trama y borde del globo.
+            zona = (texto[0] - 40, texto[1] - 40, texto[2] + 40, texto[3] + 40)
+            bloques = V.texto_en_zona(img, zona)
+            self.assertEqual(len(bloques), 1, f'zona {zona}')
+            b = bloques[0]
+            caja = (b.x, b.y, b.x + b.w, b.y + b.h)
+            self.assertGreater(interseccion(caja, texto), 0.85 * area(texto))
+            self.assertLess(area(caja), 0.6 * area(zona), 'debe ajustarse al texto')
+
+    def test_globo_sobre_fondo_negro_y_sin_pelos_del_dibujo(self):
+        # Globo blanco sobre fondo negro (desvía el umbral de Otsu de la zona) y,
+        # al lado, una zona blanca con pelos finos y grises del dibujo.
+        img = np.zeros((300, 420, 3), np.uint8)
+        cv2.ellipse(img, (110, 150), (90, 120), 0, 0, 360, (255, 255, 255), -1)
+        cv2.ellipse(img, (110, 150), (90, 120), 0, 0, 360, (0, 0, 0), 3)
+        for i, letra in enumerate('ABC'):
+            cv2.putText(
+                img,
+                letra,
+                (90, 115 + 40 * i),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.1,
+                (0, 0, 0),
+                3,
+            )
+        img[40:260, 240:400] = 255
+        for i in range(6):
+            cv2.line(img, (250 + 20 * i, 60), (270 + 20 * i, 240), (150, 150, 150), 1)
+        bloques = V.texto_en_zona(img, (5, 5, 415, 295))
+        self.assertEqual(len(bloques), 1)
+        b = bloques[0]
+        self.assertTrue(70 <= b.x and b.x + b.w <= 150, (b.x, b.w))
+        self.assertTrue(70 <= b.y and b.y + b.h <= 215, (b.y, b.h))
+
+    def test_sin_texto_no_devuelve_nada(self):
+        img = np.full((200, 200, 3), 255, np.uint8)
+        cv2.circle(img, (100, 100), 60, (0, 0, 0), 2)
+        self.assertEqual(V.texto_en_zona(img, (10, 10, 190, 190)), [])
+
+
 class DeteccionTest(unittest.TestCase):
     def test_encuentra_los_tres_globos_del_ejemplo(self):
         img = V.bgr_from_file(str(DEMO))

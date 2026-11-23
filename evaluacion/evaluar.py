@@ -3,7 +3,8 @@
 Partes:
 1. Pares sintéticos: máscara (IoU/Dice), selector, limpieza (MAE/PSNR/SSIM),
    conservación e hipótesis «selección adaptativa vs. método único».
-2. OpenMantra: detección de texto (precisión, recall y F1).
+2. OpenMantra: detección de texto (precisión, recall y F1) y selección por zona
+   aproximada («Ajustar al texto»).
 3. OpenMantra ampliado a 2048 px: tiempo por página.
 4. Regiones reales etiquetadas a mano (si existe evaluacion/etiquetas.csv): selector.
 
@@ -546,6 +547,202 @@ def resumen_deteccion(filas: list[dict]) -> tuple[str, float, float]:
 
 
 # ---------------------------------------------------------------------------
+# 2b. Selección por zona aproximada («Ajustar al texto»)
+# ---------------------------------------------------------------------------
+
+ZONAS_POR_LIBRO = 120
+DIBUJO_VISIBLE = 50  # px de dibujo borrado desde los que una zona cuenta como dañina
+
+
+def _mascara_de(imagen: np.ndarray, cajas: list[tuple]) -> np.ndarray:
+    """Unión, del tamaño de la página, de las máscaras de cada caja (x1, y1, x2, y2)."""
+    total = np.zeros(imagen.shape[:2], bool)
+    for caja in cajas:
+        try:
+            r = V.bounded_region(imagen, caja)
+        except ValueError:
+            continue
+        total[r.y : r.y + r.h, r.x : r.x + r.w] |= (
+            V.generate_mask(imagen, r, V.Options()) > 0
+        )
+    return total
+
+
+def evaluar_zonas(
+    datos: list[dict], por_libro: int | None = ZONAS_POR_LIBRO
+) -> list[dict]:
+    """Simula a una persona que encierra cada texto a grandes rasgos y compara dos
+    usos de ese rectángulo: como región tal cual, o como zona donde buscar el texto
+    (texto_en_zona, la casilla «Ajustar al texto»).
+
+    La zona es la caja anotada más un margen al azar de 10–70 % de su lado corto
+    (más 6 px) en cada lado. Las letras de referencia son la máscara que da la caja
+    anotada (las cajas de OpenMantra son holgadas y en globos blancos esa máscara
+    toma bien las letras). Se mide qué parte de esas letras cubre la máscara de
+    cada opción y cuánto borra fuera de todas las cajas anotadas (dibujo).
+    """
+    filas = []
+    for libro in datos:
+        nombre = libro['book_title']
+        rng = np.random.default_rng([S.SEMILLA, sum(map(ord, nombre))])
+        cuenta = 0
+        for pagina in libro['pages']:
+            if por_libro is not None and cuenta >= por_libro:
+                break
+            imagen = V.bgr_from_file(str(DATASET / pagina['image_paths']['ja']))
+            alto, ancho = imagen.shape[:2]
+            textos = [
+                (t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h'])
+                for t in pagina['text']
+            ]
+            en_cajas = np.zeros((alto, ancho), bool)
+            for x1, y1, x2, y2 in textos:
+                en_cajas[y1:y2, x1:x2] = True
+            referencia = {t: _mascara_de(imagen, [t]) for t in textos}
+            for t in textos:
+                if por_libro is not None and cuenta >= por_libro:
+                    break
+                cuenta += 1
+                x1, y1, x2, y2 = t
+                m = rng.uniform(0.1, 0.7, 4) * min(x2 - x1, y2 - y1) + 6
+                zona = (
+                    max(0, int(x1 - m[0])),
+                    max(0, int(y1 - m[1])),
+                    min(ancho, int(x2 + m[2])),
+                    min(alto, int(y2 + m[3])),
+                )
+                objetivos = [
+                    u for u in textos if M._interseccion(u, zona) >= 0.8 * M._area(u)
+                ]
+                letras = np.zeros((alto, ancho), bool)
+                for u in objetivos:
+                    letras |= referencia[u]
+                if not letras.any():
+                    continue
+                bloques = [
+                    (r.x, r.y, r.x + r.w, r.y + r.h)
+                    for r in V.texto_en_zona(imagen, zona)
+                ]
+                fuera = sum(
+                    max(M._interseccion(b, u) for u in textos) < 0.5 * M._area(b)
+                    for b in bloques
+                )
+                fila = {
+                    'libro': nombre,
+                    'pagina': pagina['page_index'],
+                    'zona': zona,
+                    'textos': len(objetivos),
+                    'bloques': len(bloques),
+                    'bloques_fuera': fuera,
+                }
+                # Sin bloques, la aplicación usa el rectángulo tal cual.
+                for modo, cajas in (('zona', [zona]), ('ajuste', bloques or [zona])):
+                    mascara = _mascara_de(imagen, cajas)
+                    fila[f'cubierto_{modo}'] = float(
+                        (mascara & letras).sum() / letras.sum()
+                    )
+                    fila[f'dibujo_{modo}'] = int((mascara & ~en_cajas).sum())
+                filas.append(fila)
+    return filas
+
+
+def resumen_zonas(filas: list[dict]) -> tuple[str, dict]:
+    """Sección de «Ajustar al texto». Devuelve (texto, valores de todas las obras)."""
+
+    def medir(g):
+        valores = {}
+        for modo in ('zona', 'ajuste'):
+            valores[modo] = (
+                np.mean([f[f'cubierto_{modo}'] for f in g]),
+                np.mean([f[f'cubierto_{modo}'] >= 0.95 for f in g]),
+                np.mean([f[f'dibujo_{modo}'] for f in g]),
+                np.mean([f[f'dibujo_{modo}'] > DIBUJO_VISIBLE for f in g]),
+            )
+        bloques = sum(f['bloques'] for f in g)
+        extra = (
+            bloques / sum(f['textos'] for f in g),
+            sum(f['bloques_fuera'] for f in g) / max(1, bloques),
+            np.mean([f['bloques'] == 0 for f in g]),
+        )
+        return valores, extra
+
+    def par(a, b, decimales=2, pct=False):
+        if pct:
+            return f'{num(100 * a, 0)} % → **{num(100 * b, 0)} %**'
+        return f'{num(a, decimales)} → **{num(b, decimales)}**'
+
+    filas_tabla = []
+    grupos = [
+        (
+            f'{l} (prueba)' if l == LIBRO_PRUEBA else l,
+            [f for f in filas if f['libro'] == l],
+        )
+        for l in dict.fromkeys(f['libro'] for f in filas)
+    ]
+    grupos.append(
+        (
+            '**Desarrollo (sin la prueba)**',
+            [f for f in filas if f['libro'] != LIBRO_PRUEBA],
+        )
+    )
+    grupos.append(('**Todas**', filas))
+    for nombre, g in grupos:
+        v, extra = medir(g)
+        z, a = v['zona'], v['ajuste']
+        filas_tabla.append(
+            [
+                nombre,
+                len(g),
+                par(z[0], a[0]),
+                par(z[1], a[1], pct=True),
+                par(z[2], a[2], 0),
+                par(z[3], a[3], pct=True),
+                num(extra[0]),
+                f'{num(100 * extra[1], 0)} %',
+            ]
+        )
+    total, extra_total = medir(filas)
+    partes = [
+        '## 8. Selección por zona aproximada («Ajustar al texto», OpenMantra)',
+        '',
+        'Simula a una persona que encierra cada texto a grandes rasgos: la caja anotada '
+        'más un margen al azar de 10–70 % de su lado corto en cada lado (más 6 px). Se '
+        'compara usar ese rectángulo tal cual como región con buscar el texto dentro de '
+        'él (`texto_en_zona`); cada celda dice «tal cual → **ajustado**». Las letras de referencia son la '
+        'máscara que da la caja anotada; el dibujo borrado son los píxeles de máscara '
+        'fuera de todas las cajas anotadas. Los parámetros se ajustaron solo con las '
+        'cuatro obras de desarrollo. Si no encuentra texto, la aplicación usa el '
+        'rectángulo tal cual, y aquí también.',
+        '',
+        tabla(
+            [
+                'Obra',
+                'Zonas',
+                'Letras cubiertas (media)',
+                'Zonas con ≥ 95 % cubierto',
+                'Dibujo borrado (px por zona)',
+                f'Zonas que borran > {DIBUJO_VISIBLE} px de dibujo',
+                'Bloques por texto',
+                'Bloques fuera de las cajas',
+            ],
+            filas_tabla,
+        ),
+        '',
+        f'En {num(100 * extra_total[2], 0)} % de las zonas no encontró texto en globos '
+        '(se usa el rectángulo). Un bloque «fuera de las cajas» tiene menos de la mitad '
+        'de su área dentro de una caja anotada: casi siempre son trozos de dibujo '
+        'encerrados por papel blanco (trazos gruesos, líneas punteadas que decoran el '
+        'borde del globo), y a veces texto que OpenMantra no anotó.',
+    ]
+    return '\n'.join(partes), {
+        'dibujo_zona': total['zona'][2],
+        'dibujo_ajuste': total['ajuste'][2],
+        'cubierto_zona': total['zona'][1],
+        'cubierto_ajuste': total['ajuste'][1],
+    }
+
+
+# ---------------------------------------------------------------------------
 # 3. Rendimiento
 # ---------------------------------------------------------------------------
 
@@ -873,6 +1070,9 @@ def main() -> None:
     avance('Midiendo la detección en OpenMantra…')
     filas_det = evaluar_deteccion(datos, por_libro)
     guardar_csv('deteccion.csv', filas_det)
+    avance('Midiendo «Ajustar al texto» con zonas aproximadas…')
+    filas_zonas = evaluar_zonas(datos, 10 if args.rapido else ZONAS_POR_LIBRO)
+    guardar_csv('zonas.csv', filas_zonas)
     avance(f'Midiendo el tiempo en {n_tiempo} páginas de {LADO_RENDIMIENTO} px…')
     filas_tiempo = evaluar_rendimiento(datos, n_tiempo)
     guardar_csv('rendimiento.csv', filas_tiempo)
@@ -892,6 +1092,7 @@ def main() -> None:
     texto_selector, macro_sint = resumen_selector(filas_mascara)
     texto_limpieza, clave = resumen_limpieza(filas_limpieza)
     texto_det, f1_det, f1_prueba = resumen_deteccion(filas_det)
+    texto_zonas, zonas = resumen_zonas(filas_zonas)
     texto_tiempo, t_max = resumen_rendimiento(filas_tiempo)
     texto_real, macro_real = resumen_selector_real(filas_real, acuerdo, cv_real)
 
@@ -929,6 +1130,20 @@ def main() -> None:
             '≥ 0,80',
             num(macro_real) if macro_real is not None else 'pendiente',
             cumple(macro_real >= 0.80) if macro_real is not None else '—',
+        ],
+        [
+            '«Ajustar al texto»: zonas con ≥ 95 % de las letras cubiertas '
+            '(rectángulo tal cual → ajustado)',
+            'sin meta',
+            f'{num(100 * zonas["cubierto_zona"], 0)} % → '
+            f'{num(100 * zonas["cubierto_ajuste"], 0)} %',
+            '—',
+        ],
+        [
+            '«Ajustar al texto»: dibujo borrado por zona (rectángulo tal cual → ajustado)',
+            'sin meta',
+            f'{num(zonas["dibujo_zona"], 0)} px → {num(zonas["dibujo_ajuste"], 0)} px',
+            '—',
         ],
         ['Reconstrucción (MAE/PSNR/SSIM)', 'sin meta', 'ver sección 3', '—'],
         [
@@ -981,6 +1196,7 @@ def main() -> None:
             texto_det,
             texto_tiempo,
             texto_real,
+            texto_zonas,
         ]
     )
     (RESULTADOS / 'resumen.md').write_text(resumen + '\n', encoding='utf-8')

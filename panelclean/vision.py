@@ -98,7 +98,7 @@ def bounded_region(
     y1, y2 = max(0, min(y1, y2)), min(h, max(y1, y2))
     if x2 - x1 < 12 or y2 - y1 < 12:
         raise ValueError('La región debe tener al menos 12 × 12 píxeles')
-    region = Region(x1, y1, x2 - x1, y2 - y1, id, origin)
+    region = Region(x1, y1, x2 - x1, y2 - y1, id=id, origin=origin)
     if interior is not None:
         assert interior.shape == (region.h, region.w)
         region.interior = interior.copy()
@@ -167,6 +167,162 @@ def detect_bubbles(image: np.ndarray) -> list[Region]:
     for i, z in enumerate(result):
         z.id = i + 1
     return result[:35]
+
+
+# Parámetros de texto_en_zona. Se ajustaron con zonas simuladas alrededor de los
+# textos de las cuatro obras de desarrollo de OpenMantra, nunca con la de prueba.
+PAPEL_CLARO = 215  # gris desde el que un píxel cuenta como papel del globo
+PAPEL_MINIMO = 300  # px: zonas de papel más chicas no se revisan
+TINTA_VISIBLE = 160  # piezas cuyo punto más oscuro es más claro no son tinta
+TINTA_NEGRA = 110  # un grupo de letras tiene algún píxel así de oscuro…
+TRAZO_GRUESO = 1.5  # …en una pieza con algún punto a esta distancia (px) de su borde
+UNION_LETRAS = 1.2  # piezas más cercanas que esto (en tamaños de letra) son un bloque
+MARGEN_BLOQUE = 0.25  # margen alrededor de cada bloque, en tamaños de letra
+
+
+def _encerrado(forma: np.ndarray) -> np.ndarray:
+    """Lo que la forma (máscara booleana) encierra: lo que no se alcanza desde fuera
+    de su rectángulo sin cruzarla. No incluye la forma misma."""
+    libre = np.pad(~forma, 1, 'constant', constant_values=True).astype(np.uint8)
+    cv2.floodFill(libre, None, (0, 0), 2)
+    return (libre == 1)[1:-1, 1:-1]
+
+
+def _huecos_del_papel(gris: np.ndarray) -> list[tuple[int, int, np.ndarray]]:
+    """Tinta que el papel rodea por completo, separada por zona de papel.
+
+    Devuelve (x, y, huecos) por cada zona de papel con algo adentro; huecos es una
+    máscara del tamaño del rectángulo de esa zona, con origen en (x, y). Lo que
+    toca el borde de la imagen no es hueco: una letra cortada no se toma a medias.
+
+    Solo cuenta la tinta que toca esa zona de papel: las letras de un globo dibujado
+    sobre papel blanco son huecos del papel del globo, no del papel de afuera. Y se
+    descartan los marcos, como el contorno de un globo: piezas que encierran más del
+    doble de su propia área con otra tinta adentro, o más de cinco veces aunque
+    esté vacía (una letra como 口 encierra solo un poco de papel).
+    """
+    papel = gris > PAPEL_CLARO
+    # Papel con conexión 4 y tinta con conexión 8: así una línea diagonal fina
+    # (el borde de un globo) separa el papel de adentro del de afuera.
+    n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(papel.astype(np.uint8), 4)
+    cruz = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+    salida = []
+    for k in range(1, n):
+        x, y, w, h, area = [int(v) for v in stats[k]]
+        if area < PAPEL_MINIMO:
+            continue
+        propio = etiquetas[y : y + h, x : x + w] == k
+        tinta = _encerrado(propio) & ~papel[y : y + h, x : x + w]
+        if not tinta.any():
+            continue
+        m, piezas, pstats, _ = cv2.connectedComponentsWithStats(
+            tinta.astype(np.uint8), 8
+        )
+        vecinas = np.zeros(m, bool)
+        toca = cv2.dilate(propio.astype(np.uint8), cruz) > 0
+        vecinas[np.unique(piezas[toca & tinta])] = True
+        vecinas[0] = False
+        for p in np.flatnonzero(vecinas):
+            px, py, pw, ph, parea = [int(v) for v in pstats[p]]
+            pieza = piezas[py : py + ph, px : px + pw] == p
+            dentro = _encerrado(pieza)
+            adentro_hay_tinta = (dentro & tinta[py : py + ph, px : px + pw]).any()
+            relacion = dentro.sum() / parea
+            if (adentro_hay_tinta and relacion > 2) or relacion > 5:
+                vecinas[p] = False  # marco: contorno de un globo o de una viñeta
+        huecos = vecinas[piezas]
+        if huecos.any():
+            salida.append((x, y, huecos.astype(np.uint8) * 255))
+    return salida
+
+
+def texto_en_zona(image: np.ndarray, xyxy: tuple[int, int, int, int]) -> list[Region]:
+    """Bloques de texto dentro de una zona marcada a grandes rasgos.
+
+    El usuario no necesita ajustar el rectángulo a las letras: basta con encerrar
+    el globo (o varios). Las letras de un globo son los «huecos» de su papel: lo
+    oscuro que el papel blanco rodea por completo. Por eso no importa lo que haya
+    alrededor del globo (fondo negro, tramas, dibujo), que en cambio desvía el
+    umbral de Otsu calculado sobre la zona entera y deja fuera las letras finas.
+
+    Los huecos se agrupan por globo y por cercanía, según el tamaño de letra que
+    se mide en cada globo. Se descartan los grupos sin tinta negra de trazo
+    grueso (pelos, gotas de sudor y líneas finas del dibujo también son huecos
+    del papel) y las piezas sueltas chicas o alargadas. Cada bloque se devuelve
+    como una región ajustada, con un margen de un cuarto de letra. Si no hay
+    texto en globos (por ejemplo, texto sobre el dibujo), la lista queda vacía.
+    """
+    zona = bounded_region(image, xyxy)
+    roi = image[zona.y : zona.y + zona.h, zona.x : zona.x + zona.w]
+    gris = cv2.GaussianBlur(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), (3, 3), 0)
+    globos = []
+    for x, y, huecos in _huecos_del_papel(gris):
+        n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(huecos, 8)
+        # Tinta más oscura y grosor máximo de cada pieza.
+        sub = gris[y : y + huecos.shape[0], x : x + huecos.shape[1]]
+        oscuro = np.full(n, 255.0, np.float32)
+        np.minimum.at(oscuro, etiquetas.ravel(), sub.ravel().astype(np.float32))
+        grosor = np.zeros(n, np.float32)
+        distancia = cv2.distanceTransform(huecos, cv2.DIST_L2, 3)
+        np.maximum.at(grosor, etiquetas.ravel(), distancia.ravel())
+        # Como en generate_mask: muchos puntos chicos y finos son una trama, no letras.
+        puntos = (stats[:, 4] < 30) & (grosor < GROSOR_LETRA)
+        if int(puntos[1:].sum()) < PUNTOS_DE_TRAMA:
+            puntos[:] = False
+        tinta = (stats[:, 4] >= 2) & (oscuro <= TINTA_VISIBLE) & ~puntos
+        tinta[0] = False
+        lado = np.maximum(stats[:, 2], stats[:, 3])
+        globos.append((x, y, etiquetas, stats, oscuro, grosor, tinta, lado))
+    medibles = [g[7][g[6] & (g[7] >= 3)] for g in globos]
+    if not medibles or not np.concatenate(medibles).size:
+        return []
+    letra_zona = float(np.percentile(np.concatenate(medibles), 75))
+    cajas = []
+    for (x, y, etiquetas, stats, oscuro, grosor, tinta, lado), propios in zip(
+        globos, medibles
+    ):
+        # Tamaño de letra: el de este globo si hay piezas suficientes para medirlo.
+        letra = float(np.percentile(propios, 75)) if len(propios) >= 4 else letra_zona
+        sirve = tinta & (lado <= 3 * letra)
+        de_letra = sirve & (oscuro <= TINTA_NEGRA) & (grosor >= TRAZO_GRUESO)
+        piezas = np.where(sirve[etiquetas], 255, 0).astype(np.uint8)
+        if not piezas.any():
+            continue
+        union = max(3, int(round(UNION_LETRAS * letra)))
+        bloques = cv2.connectedComponents(
+            cv2.dilate(
+                piezas, cv2.getStructuringElement(cv2.MORPH_RECT, (union, union))
+            ),
+            connectivity=8,
+        )[1]
+        bloques[piezas == 0] = 0
+        margen = max(3, int(round(MARGEN_BLOQUE * letra)))
+        for b in np.unique(bloques)[1:]:
+            ys, xs = np.nonzero(bloques == b)
+            ids = np.unique(etiquetas[ys, xs])
+            x1, x2 = int(xs.min()), int(xs.max()) + 1
+            y1, y2 = int(ys.min()), int(ys.max()) + 1
+            largo, corto = max(x2 - x1, y2 - y1), min(x2 - x1, y2 - y1)
+            if largo < 0.5 * letra or not de_letra[ids].any():
+                continue
+            if len(ids) == 1 and (largo < 0.8 * letra or largo > 3 * corto):
+                continue  # trazo suelto: una mota o una línea del dibujo
+            cajas.append(
+                (
+                    zona.x + max(0, x + x1 - margen),
+                    zona.y + max(0, y + y1 - margen),
+                    zona.x + min(zona.w, x + x2 + margen),
+                    zona.y + min(zona.h, y + y2 + margen),
+                )
+            )
+    regiones = []
+    for caja in cajas:
+        try:
+            regiones.append(bounded_region(image, caja, origin='Zona'))
+        except ValueError:
+            continue  # bloque de menos de 12 × 12 px
+    regiones.sort(key=lambda r: (r.y, r.x))
+    return regiones
 
 
 def iou_rect(a: Region, b: Region) -> float:

@@ -108,6 +108,21 @@ class AppTest(unittest.TestCase):
         self.assertIn('window', [lienzo.type(i) for i in lienzo.find_all()])
         ventana.destroy()
 
+    # --- zona aproximada ---------------------------------------------------
+    def test_una_zona_holgada_se_ajusta_al_texto(self):
+        self.app.remove_all()
+        x1, y1, x2, y2 = TEXTOS[0]
+        zona = (x1 - 40, y1 - 40, x2 + 40, y2 + 40)
+        nuevas = self.app.add_zone(zona)
+        self.assertEqual(len(nuevas), 1)
+        r = nuevas[0]
+        self.assertLess(r.w * r.h, 0.6 * (zona[2] - zona[0]) * (zona[3] - zona[1]))
+        self.assertEqual(self.app._nombre(r), 'R01')
+        self.assertEqual(self.app.add_zone(zona), [], 'no repite regiones')
+        self.app.ajustar.set(False)
+        tal_cual = self.app.add_zone(zona)[0]
+        self.assertEqual(tal_cual.rect, (zona[0], zona[1], 255, 185))
+
     # --- vistas ----------------------------------------------------------
     def test_la_vista_no_se_recalcula_al_mover_pero_si_al_cambiar_la_mascara(self):
         self.app.render_views()

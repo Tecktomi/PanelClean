@@ -23,6 +23,8 @@ from .vision import (
     write_png,
     bounded_region,
     detect_bubbles,
+    iou_rect,
+    texto_en_zona,
     generate_mask,
     describe_background,
     clean_region,
@@ -273,6 +275,8 @@ class PanelCleanApp:
         self.next_id = 1
         self.source_path = ''
         self.show_masks = tk.BooleanVar(value=True)
+        # Con «Ajustar al texto», un rectángulo arrastrado es solo la zona donde buscar letras.
+        self.ajustar = tk.BooleanVar(value=True)
         self.threshold = tk.StringVar(value='Otsu')
         self.method = tk.StringVar(value='Automático')
         self.tool = tk.StringVar(value='Seleccionar')
@@ -474,12 +478,15 @@ class PanelCleanApp:
         cb.bind('<<ComboboxSelected>>', lambda _: callback())
         return cb
 
-    def _opcion(self, parent, text, variable, value=None):
-        """Botón de opción (value dado) o casilla (sin value) con los colores del panel."""
+    def _opcion(self, parent, text, variable, value=None, command=None):
+        """Botón de opción (value dado) o casilla (sin value) con los colores del panel.
+
+        Al cambiar llama a command (por defecto, redibuja las vistas).
+        """
         comun = dict(
             text=text,
             variable=variable,
-            command=self.render_views,
+            command=command or self.render_views,
             bg=parent.cget('bg'),
             fg=C['text'],
             selectcolor=C['bg'],
@@ -508,7 +515,8 @@ class PanelCleanApp:
             panel,
             'Detectar globos',
             self.auto_detect,
-            help_text='Búsqueda experimental de globos. Revisa los candidatos antes de limpiar.',
+            help_text='Búsqueda experimental de globos en toda la página; falla con estilos de dibujo '
+            'distintos. Es más seguro encerrar cada globo con el ratón: la selección se ajusta sola al texto.',
         ).pack(fill='x', padx=16, pady=(0, 10))
 
         # Controles de abajo: se empaquetan antes que la lista para que ella sea
@@ -542,7 +550,16 @@ class PanelCleanApp:
             ('Borrar', 'Borrar máscara'),
         ]:
             self._opcion(abajo, label, self.tool, name).pack(fill='x', pady=(2, 0))
-        self._opcion(abajo, 'Ver máscara', self.show_masks).pack(fill='x', pady=(4, 6))
+        self._opcion(abajo, 'Ver máscara', self.show_masks).pack(fill='x', pady=(4, 0))
+        ajustar = self._opcion(
+            abajo, 'Ajustar al texto', self.ajustar, command=self._pista_seleccion
+        )
+        ajustar.pack(fill='x', pady=(2, 6))
+        Tooltip(
+            ajustar,
+            'Arrastra a grandes rasgos alrededor de uno o varios globos: se crea una región '
+            'ajustada a cada bloque de texto. Sin marcar, el rectángulo se usa tal cual.',
+        )
         adv_btn = self._button(abajo, 'Ajustes avanzados  ▾', self.toggle_advanced)
         adv_btn.pack(fill='x')
         self.advanced_button = adv_btn
@@ -696,9 +713,8 @@ class PanelCleanApp:
             bar.pack(fill='x', padx=13, pady=(10, 9))
             self._label(bar, title, 9, 'accent', True).pack(side='left')
             if key == 'left':
-                self._label(bar, 'Selecciona texto, no el contorno', 9, 'muted').pack(
-                    side='right'
-                )
+                self.pista = self._label(bar, '', 9, 'muted')
+                self.pista.pack(side='right')
             cv = tk.Canvas(
                 shell,
                 bg=C['canvas'],
@@ -768,6 +784,7 @@ class PanelCleanApp:
         self.left_panel.grid(row=0, column=0, sticky='ns', padx=(0, 10))
         self.center_panel.grid(row=0, column=1, sticky='nsew')
         self.right_panel.grid(row=0, column=2, sticky='ns', padx=(10, 0))
+        self._pista_seleccion()
         self._paneles = {
             'left': (self.left_panel, self._tira(body, '›', 'left')),
             'right': (self.right_panel, self._tira(body, '‹', 'right')),
@@ -854,24 +871,40 @@ class PanelCleanApp:
         """Agrega como regiones los globos que encuentra detect_bubbles, sin repetir los que ya están."""
         if self.original is None:
             return
-        found = detect_bubbles(self.original)
-        old_selection = set(self.selected_indices)
-        new = []
-        for candidate in found:
-            if any(self._rect_overlap(candidate, r) > 0.5 for r in self.regions):
-                continue
-            candidate.id = self._new_id()
-            candidate.numero = self._nuevo_numero()
-            self.regions.append(candidate)
-            new.append(len(self.regions) - 1)
-        self.selected_indices = old_selection | set(new)
-        if new:
-            self.focus_index = new[-1]
+        nuevas = self._agregar_encontradas(detect_bubbles(self.original))
         self.refresh_regions()
         self.render_views()
         self._set_status(
-            f'{len(new)} posibles globos añadidos. Selecciona las letras dentro de cada globo para mayor precisión.'
+            f'{len(nuevas)} posibles globos añadidos. Selecciona las letras dentro de cada globo para mayor precisión.'
         )
+
+    def _agregar_encontradas(self, encontradas, ajustadas=False):
+        """Suma a la hoja las regiones encontradas que no repiten una existente, y las
+        deja elegidas. Devuelve las que se sumaron.
+
+        Un globo detectado se descarta si cae sobre una región que ya está. Un bloque
+        ajustado al texto (ajustadas=True) solo si es casi el mismo rectángulo que otra
+        región: dentro de un globo grande ya marcado sí se agrega, porque es más preciso.
+        """
+        nuevas = []
+        for candidata in encontradas:
+            if any(
+                (
+                    iou_rect(candidata, r) > 0.5
+                    if ajustadas
+                    else self._rect_overlap(candidata, r) > 0.5
+                )
+                for r in self.regions
+            ):
+                continue
+            candidata.id = self._new_id()
+            candidata.numero = self._nuevo_numero()
+            self.regions.append(candidata)
+            self.selected_indices.add(len(self.regions) - 1)
+            nuevas.append(candidata)
+        if nuevas:
+            self.focus_index = len(self.regions) - 1
+        return nuevas
 
     def selected_regions(self):
         """Devuelve las regiones seleccionadas en la lista, en orden."""
@@ -1130,9 +1163,50 @@ class PanelCleanApp:
                     return
         else:
             try:
-                self.add_region((start[0], start[1], point[0], point[1]))
+                self.add_zone((start[0], start[1], point[0], point[1]))
             except ValueError as exc:
                 self._set_status(str(exc))
+
+    def _pista_seleccion(self):
+        """Indica sobre la vista ORIGINAL cómo marcar el texto, según «Ajustar al texto»."""
+        self.pista.configure(
+            text=(
+                'Encierra el globo: se ajusta al texto'
+                if self.ajustar.get()
+                else 'Selecciona texto, no el contorno'
+            )
+        )
+
+    def add_zone(self, xyxy):
+        """Crea regiones a partir del rectángulo (x1, y1, x2, y2) que arrastró el usuario.
+
+        Con «Ajustar al texto», el rectángulo es solo la zona donde buscar: se crea una
+        región ajustada por cada bloque de texto en globos que haya adentro
+        (texto_en_zona), sin repetir las que ya existen. Si no encuentra ninguno, o la
+        casilla está desmarcada, usa el rectángulo tal cual. Devuelve las regiones nuevas.
+        """
+        if not self.ajustar.get():
+            return [self.add_region(xyxy)]
+        bloques = texto_en_zona(self.original, xyxy)
+        if not bloques:
+            region = self.add_region(xyxy)
+            self._set_status(
+                f'No se encontró texto en globos dentro de la zona; {self._nombre(region)} '
+                'usa el rectángulo tal como lo marcaste.'
+            )
+            return [region]
+        nuevas = self._agregar_encontradas(bloques, ajustadas=True)
+        if nuevas:
+            self.method.set('Automático')
+        self.refresh_regions()
+        self.render_views()
+        nombres = ', '.join(self._nombre(r) for r in nuevas)
+        self._set_status(
+            f'Texto encontrado en la zona: {nombres}. Revisa los rectángulos y crea las máscaras.'
+            if nuevas
+            else 'El texto de esa zona ya tiene regiones.'
+        )
+        return nuevas
 
     def add_region(self, xyxy):
         """Crea una región con el rectángulo (x1, y1, x2, y2), la selecciona y la devuelve.
