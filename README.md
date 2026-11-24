@@ -5,6 +5,7 @@ Aplicación de escritorio para limpiar el texto de los globos de manga: separa l
 Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026) · versión 0.3.1-beta.
 
 - **[Manual de instalación y usuario](MANUAL.md)**, con capturas (también en PDF: [`docs/Manual_PanelClean.pdf`](docs/Manual_PanelClean.pdf)).
+- **[Documento de análisis y diseño](docs/Documento_Analisis_Diseno_PanelClean.pdf)** (PDF): requisitos, planificación, arquitectura, módulos, interfaces y resultados.
 - **[Resultados de la evaluación](evaluacion/resultados/resumen.md)** frente a las metas del Hito 1.
 - **Bitácora** del proyecto: [`Bitacora_PanelClean.xlsx`](Bitacora_PanelClean.xlsx).
 
@@ -60,7 +61,7 @@ La versión actual cubre el flujo completo. Todavía puede fallar con texto sobr
 | `MARCAR_WINDOWS.bat` | Abre el programa para marcar dónde hay texto en páginas propias: le enseña al detector otros estilos e idiomas y mide cómo le va en ellos |
 | `examples/` | Página de ejemplo que abre el botón `Ejemplo` |
 | `datasets/open-mantra/` | Páginas de manga reales usadas en la evaluación ([créditos](datasets/README.md)) |
-| `docs/` | Entregas del curso (presentación del Hito 1, informe del Hito 2), el manual en PDF y sus capturas |
+| `docs/` | Entregas del curso (presentación del Hito 1, informe del Hito 2, documento final de análisis y diseño), el manual en PDF y sus capturas |
 | `MANUAL.md`, `Bitacora_PanelClean.xlsx` | Manual de instalación y usuario, y bitácora del proyecto |
 
 ## Pruebas automáticas
@@ -89,6 +90,7 @@ Los resultados quedan en `evaluacion/resultados/resumen.md`. Para etiquetar el f
 
 - [`docs/PanelClean_Presentacion_Hito1.pdf`](docs/PanelClean_Presentacion_Hito1.pdf): propuesta, arquitectura y plan de validación.
 - [`docs/Informe_Hito2_PanelClean.pdf`](docs/Informe_Hito2_PanelClean.pdf): funcionamiento de la beta, relación con TEL-328 y mejoras pendientes.
+- [`docs/Documento_Analisis_Diseno_PanelClean.pdf`](docs/Documento_Analisis_Diseno_PanelClean.pdf): documento de análisis y diseño de la entrega final, con los resultados y las limitaciones.
 - [`docs/Manual_PanelClean.pdf`](docs/Manual_PanelClean.pdf): el manual de instalación y usuario en PDF.
 
 ## Datos incluidos y créditos
