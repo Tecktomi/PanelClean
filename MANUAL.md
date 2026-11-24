@@ -25,7 +25,7 @@ Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026).
 
 | | |
 |---|---|
-| Sistema | Windows 10 u 11, o Linux con escritorio |
+| Sistema | Windows 10 u 11. Linux con escritorio: incluido, pero sin probar |
 | Python | 3.10 o superior |
 | Pantalla | 1366 × 768 o más |
 | Espacio | Unos 50 MB la carpeta del proyecto y unos 200 MB más al instalar |
@@ -61,7 +61,7 @@ chmod +x INICIAR_LINUX.sh
 ./INICIAR_LINUX.sh
 ```
 
-El lanzador avisa si falta algo y dice cómo instalarlo. Nota: el lanzador de Linux todavía no se ha probado en un equipo con Linux; si falla, avísanos con el mensaje que muestre.
+El lanzador avisa si falta algo y dice cómo instalarlo. **Sin probar:** PanelClean se probó solo en Windows; el equipo no tuvo un computador con Linux. Si falla, avísanos con el mensaje que muestre.
 
 ### Opciones
 
@@ -132,7 +132,7 @@ El panel **Selección** muestra la clase de fondo que PanelClean encontró detr�
 | **Uniforme** | Papel liso, blanco o gris | **Relleno local**: pinta con el tono del papel que rodea a las letras |
 | **Estructurado** | Trama de puntos, rayado o degradado, sin negro | **Inpainting Telea**: reconstruye el fondo a partir de sus bordes |
 | **Complejo / revisar** | Dibujo, con trazos negros | No limpia: queda para que la revises (sección 5) |
-| **Revisar máscara** (en naranja) | La máscara cubre más del 36 % de la región, o la región ocupa más del 5 % de la página (y más de 40 000 px) | No limpia: probablemente la máscara incluye dibujo |
+| **Revisar máscara** (en naranja) | La máscara cubre más del 36 % de la región (55 % si la región se ajustó sola a las letras), o la región ocupa más del 5 % de la página (y más de 40 000 px) | No limpia: probablemente la máscara incluye dibujo |
 
 Las medidas del panel explican la decisión: la **entropía** indica cuántos tonos distintos hay en el fondo (pocos = papel liso), la **textura** qué parte del fondo tiene trama, y el **tono oscuro** cuán oscuro es lo más oscuro del fondo (cerca de 0 = hay tinta de dibujo).
 
@@ -210,8 +210,8 @@ En las hojas sin regiones, PanelClean busca el texto con **Detectar texto** (sec
 
 **Detectar texto** busca el texto de toda la página en dos pasos:
 
-1. Propone como candidatos los bloques oscuros que el papel rodea por completo (la misma búsqueda de **Ajustar al texto**). Así aparece la mayor parte del texto de los globos, pero también trozos de dibujo.
-2. Un modelo entrenado con páginas de manga reales decide, para cada candidato, qué tan seguro está de que es texto. Para eso mira 17 medidas del bloque: el grosor y la regularidad de los trazos, cuánto se parecen las piezas entre sí, si forman columnas o renglones, cuánto papel blanco hay alrededor, si está dentro de un globo, entre otras.
+1. Propone como candidatos los bloques oscuros que el papel rodea por completo (la misma búsqueda de **Ajustar al texto**), probando varios tamaños de letra. Así aparece casi todo el texto de los globos, pero también trozos de dibujo.
+2. Un modelo entrenado con páginas de manga reales decide, para cada candidato, qué tan seguro está de que es texto. Para eso mira 17 medidas del bloque: el grosor y la regularidad de los trazos, cuánto se parecen las piezas entre sí, si forman columnas o renglones, cuánto papel blanco hay alrededor, si está dentro de un globo, entre otras. Si varios candidatos se solapan, queda el bloque más completo.
 
 ![Detectar texto en una página real: en malva, el texto seguro; en naranja, lo dudoso](docs/manual/detectar_texto.png)
 
@@ -223,7 +223,7 @@ Con todo el texto marcado, la página queda así:
 
 ![Página real limpiada con Detectar texto y Limpiar todas](docs/manual/pagina_real_limpia.png)
 
-**Qué esperar.** El detector aprendió sobre todo con manga en japonés. En páginas de OpenMantra encuentra cerca de 9 de cada 10 textos, pero **en una serie en español que no había visto encontró el 43 %** con confianza suficiente para limpiar solo, y el 62 % después de enseñarle otras páginas de esa misma serie (casi todo lo que propuso era texto). Las cifras están en los [resultados de la evaluación](evaluacion/resultados/resumen.md). El texto sobre dibujo y el de globos oscuros casi nunca se propone: para esos, marca la zona a mano.
+**Qué esperar.** El detector aprendió sobre todo con manga en japonés. En páginas de OpenMantra encuentra cerca de 9 de cada 10 textos, pero **en una serie en español que no había visto encontró el 64 %** con confianza suficiente para limpiar solo, y el 74 % después de enseñarle otras páginas de esa misma serie (casi todo lo que propuso era texto). Con esa serie se ajustó el detector, así que con otra puede irle algo peor. Las cifras están en los [resultados de la evaluación](evaluacion/resultados/resumen.md). Lo que más se le escapa son las palabras sueltas muy chicas («¡HOP!»), los puntos suspensivos solos y las letras que tocan el borde del globo. El texto sobre dibujo y el de globos oscuros casi nunca se propone. Para todos esos, haz clic en el globo o marca la zona a mano.
 
 ### Enseñarle tus páginas al detector
 
@@ -248,7 +248,7 @@ Con todo el texto marcado, la página queda así:
 
 **Para saber cómo le va de verdad**, reserva una serie: marca la casilla **Serie reservada para medir** antes de empezar. Con ella no se entrena y no se muestran propuestas. El informe que aparece al entrenar dice, por serie, qué parte del texto llega a proponerse («candidatos») y la precisión y el recall. Si «candidatos» es bajo, ese texto no se arregla enseñándole más páginas.
 
-Tus imágenes no se copian a ningún lado. En `evaluacion/cajas_texto.json` quedan las cajas, con el nombre de la carpeta y de los archivos. Para compartir lo aprendido con el equipo, sube ese archivo, `evaluacion/candidatos_propios.csv` y `panelclean/modelo_texto.yml`.
+Tus imágenes no se copian a ningún lado, y no hace falta compartirlas (pueden tener derechos de autor). En `evaluacion/cajas_texto.json` quedan las cajas, con el nombre de la carpeta y de los archivos. Para compartir lo aprendido con el equipo basta con subir ese archivo, `evaluacion/candidatos_propios.csv` y `panelclean/modelo_texto.yml`: son números, y con ellos no se puede reconstruir una página.
 
 ## 8. Ajustes avanzados
 
@@ -291,7 +291,7 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 - **Texto sobre dibujo.** La máscara confunde con letras los trazos de dibujo de grosor parecido (sección 5), y cuando las letras tienen un borde blanco suele quedar su silueta. Es el caso con peores resultados en las pruebas.
 - **Letras blancas sobre fondo negro.** No se detectan: la máscara busca tinta oscura. (El texto negro con borde blanco sobre un fondo oscuro sí se detecta.)
 - **Ajustar al texto.** Solo encuentra texto rodeado de papel. Con texto sobre dibujo usa el rectángulo tal cual, y a veces suma una región chica sobre dibujo encerrado por papel (sección 4, paso 2).
-- **Detectar texto.** Aprendió sobre todo con manga en japonés. En una serie en español que no había visto encontró el 43 % del texto: revisa lo naranja, haz clic en lo que falte o enséñale tus páginas (sección 7). Si la página tiene una sombra fuerte (una foto, el lomo de un tomo), la detección automática pierde cerca de la mitad del texto; los clics siguen funcionando.
+- **Detectar texto.** Aprendió sobre todo con manga en japonés. En una serie en español que no había visto encontró el 64 % del texto: revisa lo naranja, haz clic en lo que falte o enséñale tus páginas (sección 7). Si la página tiene una sombra fuerte (una foto, el lomo de un tomo), la detección automática pierde cerca de la mitad del texto; los clics siguen funcionando.
 - **Clasificación del fondo.** Acierta bien en papel liso, pero con tramas finas reales se equivoca más que con dibujo. Revisa la clase en el panel Selección.
 - **Restos.** En algunos globos queda un moteado gris muy tenue donde estaban las letras, sobre todo en páginas con mucha compresión JPEG. Se nota al mirar de cerca y se borra con **Añadir máscara** o subiendo la **Expansión**. También pueden quedar signos muy pequeños sin borrar (sección 5).
 

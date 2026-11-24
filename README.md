@@ -28,6 +28,8 @@ chmod +x INICIAR_LINUX.sh
 
 En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
+**Sin probar.** PanelClean se desarrolló y se probó solo en Windows. El lanzador de Linux está incluido y las bibliotecas que usa existen para Linux, pero el equipo no tuvo un computador donde ejecutarlo.
+
 ## Uso básico
 
 El [manual](MANUAL.md) explica cada control, cómo corregir la máscara y qué hacer si algo falla. En resumen:

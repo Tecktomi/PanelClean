@@ -1,6 +1,6 @@
 # Datos de terceros incluidos
 
-Esta carpeta contiene material que **no fue creado por el equipo de PanelClean**. Se incluye en el repositorio para que, al clonarlo o descargarlo, no haya que buscar archivos adicionales. Su licencia es distinta de la del resto del proyecto.
+Esta carpeta contiene material que **no fue creado por el equipo de PanelClean**. Es el único manga de terceros que hay en el repositorio. Se incluye en el repositorio para que, al clonarlo o descargarlo, no haya que buscar archivos adicionales. Su licencia es distinta de la del resto del proyecto.
 
 ## `open-mantra/`: OpenMantra dataset
 
@@ -28,9 +28,13 @@ Esta carpeta contiene material que **no fue creado por el equipo de PanelClean**
 
 ### Uso en PanelClean
 
-La evaluación (`evaluacion/`) lo usa para medir la detección de texto y el tiempo por página, como fuente de las frases japonesas de los pares sintéticos y para etiquetar a mano el fondo de regiones reales. Más adelante puede servir para entrenar un detector (tarea T1.2.3). Para medir sin sobreajustar, las páginas de una misma obra deben quedar todas en el mismo conjunto (entrenamiento, validación o prueba); la obra `tencho_isoro` está reservada como conjunto de prueba.
+La evaluación (`evaluacion/`) lo usa para entrenar el detector de texto y medirlo, para medir el tiempo por página, como fuente de las frases japonesas de los pares sintéticos y para etiquetar a mano el fondo de regiones reales. Para medir sin sobreajustar, las páginas de una misma obra quedan todas en el mismo conjunto; la obra `tencho_isoro` no se usa para entrenar (ver [`evaluacion/README.md`](../evaluacion/README.md)). Las capturas del manual con páginas reales también son de aquí; en algunas, PanelClean borró el texto.
 
 El uso es académico (curso TEL-328, UTFSM). La licencia no permite usar este material con fines comerciales.
+
+### Otras páginas usadas, que no están en el repositorio
+
+El detector también se entrenó con 30 páginas de una serie comercial en español, marcadas por el equipo. **Esas imágenes no se distribuyen ni se necesitan para usar PanelClean o para reentrenar**: en el repositorio solo hay coordenadas de rectángulos (`evaluacion/cajas_texto.json`), medidas numéricas de cada bloque, como el grosor del trazo o cuánto papel lo rodea (`evaluacion/candidatos_propios.csv`), y el modelo entrenado, que son umbrales sobre esas medidas. Con nada de eso se puede reconstruir una página.
 
 ### Cita
 
