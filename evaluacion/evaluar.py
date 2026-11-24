@@ -43,12 +43,17 @@ CARPETA = Path(__file__).resolve().parent
 RESULTADOS = CARPETA / 'resultados'
 DATASET = CARPETA.parent / 'datasets' / 'open-mantra'
 ETIQUETAS = CARPETA / 'etiquetas.csv'
+# Nombres distintos con que una misma persona guardó sus etiquetas (dos pasadas).
+MISMA_PERSONA = {'tomas ramdohr': 'tomas'}
 
 METODOS_FIJOS = ('Relleno local', 'Inpainting Telea', 'Inpainting NS')
 METODOS = METODOS_FIJOS + ('Automático',)
-# Obra reservada como conjunto de prueba (nunca se usa para ajustar nada).
+# Obra reservada: no se entrena ni se calculan umbrales con ella (pero se consultó
+# varias veces, ver evaluacion/README.md).
 LIBRO_PRUEBA = 'tencho_isoro'
 LADO_RENDIMIENTO = 2048
+LADOS_GRANDES = (3500, 5000)  # px: para ver si conviene reducir las páginas grandes
+PAGINAS_GRANDES = 5
 META_TIEMPO = 15.0
 
 
@@ -1074,9 +1079,11 @@ def nombre_cpu() -> str:
         return platform.processor() or platform.machine()
 
 
-def evaluar_rendimiento(datos: list[dict], n_paginas: int) -> list[dict]:
+def evaluar_rendimiento(
+    datos: list[dict], n_paginas: int, lado: int = LADO_RENDIMIENTO
+) -> list[dict]:
     """Tiempo de detectar el texto, crear las máscaras y limpiar en automático, en
-    páginas de OpenMantra ampliadas a 2048 px."""
+    páginas de OpenMantra ampliadas a `lado` px de lado mayor."""
     paginas = [(libro['book_title'], p) for libro in datos for p in libro['pages']]
     elegidas = np.linspace(0, len(paginas) - 1, min(n_paginas, len(paginas))).astype(
         int
@@ -1086,7 +1093,7 @@ def evaluar_rendimiento(datos: list[dict], n_paginas: int) -> list[dict]:
     for k in elegidas:
         libro, pagina = paginas[k]
         imagen = V.bgr_from_file(str(DATASET / pagina['image_paths']['ja']))
-        escala = LADO_RENDIMIENTO / max(imagen.shape[:2])
+        escala = lado / max(imagen.shape[:2])
         imagen = cv2.resize(
             imagen, None, fx=escala, fy=escala, interpolation=cv2.INTER_CUBIC
         )
@@ -1101,6 +1108,7 @@ def evaluar_rendimiento(datos: list[dict], n_paginas: int) -> list[dict]:
             {
                 'libro': libro,
                 'pagina': pagina['page_index'],
+                'lado': lado,
                 'ancho': imagen.shape[1],
                 'alto': imagen.shape[0],
                 'regiones': len(regiones),
@@ -1110,8 +1118,12 @@ def evaluar_rendimiento(datos: list[dict], n_paginas: int) -> list[dict]:
     return filas
 
 
-def resumen_rendimiento(filas: list[dict]) -> tuple[str, float]:
-    """Sección de rendimiento. Devuelve (texto, tiempo máximo)."""
+def resumen_rendimiento(todas: list[dict]) -> tuple[str, float]:
+    """Sección de rendimiento. Devuelve (texto, tiempo máximo a LADO_RENDIMIENTO px)."""
+    por_lado: dict = {}
+    for f in todas:
+        por_lado.setdefault(f['lado'], []).append(f)
+    filas = por_lado[LADO_RENDIMIENTO]
     tiempos = [f['segundos'] for f in filas]
     partes = ['## 6. Rendimiento', '']
     partes.append(
@@ -1133,6 +1145,22 @@ def resumen_rendimiento(filas: list[dict]) -> tuple[str, float]:
             ],
         )
     )
+    grandes = [lado for lado in LADOS_GRANDES if lado in por_lado]
+    if grandes:
+        partes.append('')
+        partes.append(
+            '**Páginas más grandes** (¿conviene reducirlas a 2048 px antes de procesar, '
+            'T1.2.4?). Tiempo máximo: '
+            + ' · '.join(
+                f'{lado} px, {num(max(f["segundos"] for f in por_lado[lado]))} s '
+                f'({len(por_lado[lado])} páginas)'
+                for lado in grandes
+            )
+            + '. No conviene: la búsqueda de texto ya se hace a un tamaño fijo '
+            f'({V.LADO_TRABAJO} px de ancho), el tiempo está lejos de la meta, y reducir la '
+            'página cambiaría todos sus píxeles (la meta es no cambiar ninguno fuera de la '
+            'máscara) y la exportaría con menos resolución que la original.'
+        )
     partes.append('')
     partes.append(
         f'Equipo: {nombre_cpu()}, {os.cpu_count()} hilos, {platform.system()} {platform.release()}.'
@@ -1146,31 +1174,39 @@ def resumen_rendimiento(filas: list[dict]) -> tuple[str, float]:
 
 
 def leer_etiquetas() -> tuple[list[dict], dict]:
-    """Etiquetas de consenso de etiquetas.csv y datos de acuerdo entre personas.
+    """Etiquetas de consenso de etiquetas.csv y datos de coincidencia.
 
-    Si varias personas etiquetaron la misma región y no coinciden, la región se
-    deja fuera hasta que resuelvan el desacuerdo. Las descartadas no se usan.
+    Una región con etiquetas distintas (de dos personas, o de una misma en dos
+    pasadas) se deja fuera. Las descartadas no se usan. La coincidencia se cuenta
+    aparte según sea entre personas ('entre') o de una persona consigo misma
+    ('misma'): cada una es una lista de pares de etiquetas.
     """
+    acuerdo: dict = {'personas': 0, 'entre': [], 'misma': []}
     if not ETIQUETAS.exists():
-        return [], {'dobles': 0, 'acuerdos': 0, 'personas': 0}
+        return [], acuerdo
     grupos: dict = {}
     personas = set()
     with open(ETIQUETAS, encoding='utf-8') as f:
         for e in csv.DictReader(f):
-            personas.add(e['etiquetador'])
+            personas.add(MISMA_PERSONA.get(e['etiquetador'], e['etiquetador']))
             k = (e['libro'], int(e['pagina']), int(e['texto']))
             grupos.setdefault(k, {})[e['etiquetador']] = e['etiqueta']
-    consenso, dobles, acuerdos = [], 0, 0
-    for (libro, pagina, texto), por_persona in grupos.items():
-        valores = set(por_persona.values())
-        if len(por_persona) > 1:
-            dobles += 1
-            acuerdos += len(valores) == 1
+    consenso = []
+    for (libro, pagina, texto), por_nombre in grupos.items():
+        nombres = list(por_nombre)
+        for i, a in enumerate(nombres):
+            for b in nombres[i + 1 :]:
+                misma = MISMA_PERSONA.get(a, a) == MISMA_PERSONA.get(b, b)
+                acuerdo['misma' if misma else 'entre'].append(
+                    (por_nombre[a], por_nombre[b])
+                )
+        valores = set(por_nombre.values())
         if len(valores) == 1 and (etiqueta := valores.pop()) in S.CLASES:
             consenso.append(
                 {'libro': libro, 'pagina': pagina, 'texto': texto, 'etiqueta': etiqueta}
             )
-    return consenso, {'dobles': dobles, 'acuerdos': acuerdos, 'personas': len(personas)}
+    acuerdo['personas'] = len(personas)
+    return consenso, acuerdo
 
 
 def evaluar_selector_real(datos: list[dict]) -> tuple[list[dict], dict]:
@@ -1213,6 +1249,39 @@ def evaluar_selector_real(datos: list[dict]) -> tuple[list[dict], dict]:
             }
         )
     return filas, acuerdo
+
+
+def resumen_coincidencia(acuerdo: dict) -> list[str]:
+    """Párrafos sobre cuánto coinciden las etiquetas repetidas."""
+    parrafos = []
+    for clave, quienes in (
+        ('misma', 'dos veces por la misma persona'),
+        ('entre', 'por personas distintas'),
+    ):
+        pares = acuerdo[clave]
+        if not pares:
+            continue
+        a, b = [x for x, _ in pares], [y for _, y in pares]
+        iguales = sum(x == y for x, y in pares)
+        f1 = M.f1_por_clase(a, b, list(S.CLASES) + ['Descartada'])
+        texto = (
+            f'{len(pares)} regiones se etiquetaron {quienes}. Las etiquetas coinciden '
+            f'en {iguales} ({num(100 * iguales / len(pares), 0)} %; kappa de Cohen '
+            f'{num(M.kappa(a, b))}). Coincidencia por clase (F1 entre las dos): '
+            + ' · '.join(f'{c} {num(f1[c])}' for c in S.CLASES)
+            + f'. Las {len(pares) - iguales} que no coinciden quedan fuera.'
+        )
+        if clave == 'misma':
+            peor = min(S.CLASES, key=lambda c: f1[c])
+            texto += (
+                ' **Es consistencia de una persona consigo misma, no acuerdo entre '
+                'personas**: no se consiguió que otra etiquetara, así que la '
+                'referencia depende de un solo criterio. Donde menos coincide es en '
+                f'«{peor}»: ahí la referencia misma es inestable, y eso limita lo que '
+                'se puede medir del selector en esa clase.'
+            )
+        parrafos += ['', texto]
+    return parrafos
 
 
 def resumen_selector_real(
@@ -1289,14 +1358,7 @@ def resumen_selector_real(
             [[h, n, N] for h, (n, N) in acuerdo['por_estrato'].items()],
         )
     )
-    if acuerdo['dobles']:
-        partes.append('')
-        partes.append(
-            f'{acuerdo["dobles"]} regiones tienen etiquetas de más de una persona; '
-            f'coinciden en {acuerdo["acuerdos"]} '
-            f'({num(100 * acuerdo["acuerdos"] / acuerdo["dobles"], 0)} %). '
-            'Las que no coinciden quedan fuera hasta resolverlas.'
-        )
+    partes += resumen_coincidencia(acuerdo)
     return '\n'.join(partes), cv['macro_f1']
 
 
@@ -1398,6 +1460,8 @@ def main() -> None:
     guardar_csv('zonas.csv', filas_zonas)
     avance(f'Midiendo el tiempo en {n_tiempo} páginas de {LADO_RENDIMIENTO} px…')
     filas_tiempo = evaluar_rendimiento(datos, n_tiempo)
+    for lado in LADOS_GRANDES:
+        filas_tiempo += evaluar_rendimiento(datos, min(n_tiempo, PAGINAS_GRANDES), lado)
     guardar_csv('rendimiento.csv', filas_tiempo)
     avance('Selector con regiones reales…')
     filas_real, acuerdo = evaluar_selector_real(datos)

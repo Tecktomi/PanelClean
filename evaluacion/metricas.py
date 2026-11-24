@@ -256,6 +256,18 @@ def macro_f1(
     return float(np.mean([f1[c] for c in presentes])) if presentes else 0.0
 
 
+def kappa(a: Sequence[str], b: Sequence[str]) -> float:
+    """Kappa de Cohen entre dos series de etiquetas: 1 = iguales, 0 = lo esperable
+    por azar. A diferencia del % de coincidencia, no sube porque una clase sea muy
+    común."""
+    if not a:
+        return 0.0
+    n = len(a)
+    observado = sum(x == y for x, y in zip(a, b)) / n
+    azar = sum(list(a).count(c) * list(b).count(c) for c in set(a) | set(b)) / n**2
+    return 1.0 if azar == 1 else (observado - azar) / (1 - azar)
+
+
 # ---------------------------------------------------------------------------
 # Intervalos de confianza
 # ---------------------------------------------------------------------------

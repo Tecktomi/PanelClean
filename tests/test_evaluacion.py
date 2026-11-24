@@ -136,6 +136,34 @@ class SelectorTest(unittest.TestCase):
             M.macro_f1(reales, predichas, ['A', 'B']),
         )
 
+    def test_kappa(self):
+        self.assertEqual(M.kappa(['a', 'b', 'a', 'b'], ['a', 'b', 'a', 'b']), 1.0)
+        self.assertAlmostEqual(M.kappa(['a', 'a', 'b', 'b'], ['a', 'b', 'a', 'b']), 0.0)
+        # Coinciden 9 de 10, pero solo porque casi todo es de una clase.
+        self.assertAlmostEqual(M.kappa(['a'] * 10, ['a'] * 9 + ['b']), 0.0)
+
+    def test_dos_pasadas_de_una_persona_no_son_acuerdo_entre_personas(self):
+        filas = [
+            'libro,pagina,texto,etiqueta,etiquetador',
+            'x,0,0,Uniforme,tomas',
+            'x,0,0,Uniforme,tomas ramdohr',
+            'x,0,1,Estructurado,tomas',
+            'x,0,1,Uniforme,tomas ramdohr',
+            'x,0,2,Complejo,tomas',
+            'x,0,2,Complejo,ana',
+        ]
+        with tempfile.TemporaryDirectory() as carpeta:
+            ruta = Path(carpeta) / 'etiquetas.csv'
+            ruta.write_text('\n'.join(filas), encoding='utf8')
+            with mock.patch.object(E, 'ETIQUETAS', ruta):
+                consenso, acuerdo = E.leer_etiquetas()
+        self.assertEqual([c['texto'] for c in consenso], [0, 2])
+        self.assertEqual(acuerdo['personas'], 2)
+        self.assertEqual(len(acuerdo['misma']), 2)
+        self.assertEqual(acuerdo['entre'], [('Complejo', 'Complejo')])
+        texto = ' '.join(E.resumen_coincidencia(acuerdo))
+        self.assertIn('no acuerdo entre personas', texto)
+
     def test_regla_del_selector(self):
         # (entropía en bits, tono oscuro): papel, trama gris y dibujo con tinta.
         self.assertEqual(V.classify_background(0.3, 250)[0], 'Uniforme')
