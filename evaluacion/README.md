@@ -11,7 +11,7 @@ Desde la raíz del repositorio, con el entorno ya instalado:
 .venv/bin/python -m evaluacion.evaluar          # Linux
 ```
 
-Tarda alrededor de un minuto en un portátil. Con `--rapido` corre una versión corta para probar. No necesita instalar nada más que lo de `requirements.txt`.
+Tarda unos 10 minutos en un portátil, porque vuelve a medir los candidatos de OpenMantra. Con `--rapido` corre una versión corta para probar. Repetirla da los mismos resultados, salvo los tiempos. No necesita instalar nada más que lo de `requirements.txt`.
 
 ## Qué se mide
 
