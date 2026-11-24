@@ -909,6 +909,10 @@ CONTRASTE_TEXTO = (
 )
 
 
+# Regiones cuyo rectángulo se ajustó solo a un bloque de letras rodeado de papel.
+REGIONES_AJUSTADAS = ('Detectada', 'Zona', 'Punto')
+
+
 def _disco(diametro: int) -> np.ndarray:
     """Elemento estructurante circular del diámetro dado (impar)."""
     return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (diametro, diametro))
@@ -1086,9 +1090,19 @@ def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarra
     allowed = inner_area(region)
     binary = cv2.bitwise_and(binary, allowed)
 
-    protected = _line_protection(binary)
     num, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
+    # En una región ajustada a las letras, una pieza que queda entera adentro es
+    # texto aunque sea tan ancha como una línea: una columna de una letra, o un
+    # renglón cuyas letras se tocan (pasa en escaneos chicos).
+    enteras = np.zeros(num, bool)
+    if region.origin in REGIONES_AJUSTADAS:
+        enteras = (stats[:, 0] > 0) & (stats[:, 1] > 0)
+        enteras &= stats[:, 0] + stats[:, 2] < region.w
+        enteras &= stats[:, 1] + stats[:, 3] < region.h
+        enteras[0] = False
+    protected = _line_protection(np.where(enteras[labels], 0, binary).astype(np.uint8))
     protegidas = set(np.unique(labels[protected > 0]).tolist())
+    protegidas -= set(np.flatnonzero(enteras).tolist())
     # Grosor de cada componente: la mayor distancia de uno de sus píxeles al fondo.
     grosor = cv2.distanceTransform(binary, cv2.DIST_L2, 3)
     grosor_max = np.zeros(num)
@@ -1105,7 +1119,9 @@ def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarra
         if k in protegidas:
             continue
         _, _, ancho, alto, area = [int(v) for v in stats[k]]
-        if _forma_de_letra(ancho, alto, area, region, min_area, max_area):
+        if (enteras[k] and 2 * area >= min_area) or _forma_de_letra(
+            ancho, alto, area, region, min_area, max_area
+        ):
             if hay_trama and area < 30 and grosor_max[k] < GROSOR_LETRA:
                 continue  # punto de la trama
             # Tocar el borde de la región no basta para descartar una pieza:
@@ -1124,7 +1140,7 @@ def generate_mask(image: np.ndarray, region: Region, opts: Options) -> np.ndarra
     chosen[blanco] = 255
     chosen = cv2.bitwise_and(chosen, allowed)
     # La expansión tampoco puede crecer sobre lo que sigue afuera.
-    chosen[(protected > 0) | (afuera & ~letras)] = 0
+    chosen[((protected > 0) & ~enteras[labels]) | (afuera & ~letras)] = 0
     region.mask = chosen
     region.mask_edited = False
     describe_background(image, region)
@@ -1213,6 +1229,9 @@ def describe_background(image: np.ndarray, region: Region) -> tuple[str, float, 
         texture,
         area=area,
         page_fraction=area / (image.shape[0] * image.shape[1]),
+        limite_mascara=(
+            MASCARA_EXTENSA_AJUSTADA if region.origin in REGIONES_AJUSTADAS else None
+        ),
     )
     if method != 'Revisión manual' and region.confianza < CONFIANZA_LIMPIAR:
         # El detector no está seguro de que sea texto: no se limpia sola.
@@ -1245,6 +1264,12 @@ TONO_TINTA = (
 )
 TEXTURA_REPARTIDA = 0.8  # fracción de la zona con variación local: más, es una trama
 
+# Una máscara que cubre más que esto de su región probablemente incluye dibujo. En
+# una región ajustada a las letras es normal que cubran más: en páginas chicas, las
+# letras con su expansión llegan a la mitad del rectángulo.
+MASCARA_EXTENSA = 0.36
+MASCARA_EXTENSA_AJUSTADA = 0.55
+
 # Una región muy grande casi nunca es solo texto: suele ser una viñeta entera
 # (por ejemplo, un globo grande de detect_bubbles) y su máscara incluye dibujo.
 # Medido en OpenMantra: estos dos límites dejan para revisión el 84 % de las
@@ -1264,14 +1289,16 @@ def classify_background(
     *,
     area: int = 0,
     page_fraction: float = 0.0,
+    limite_mascara: Optional[float] = None,
 ) -> tuple[str, str, str]:
     """Regla del selector: devuelve (clase, método sugerido, motivo de revisión).
 
     entropy (bits), dark_level (percentil 10 de gris) y texture (fracción con
     variación local) describen el fondo cercano al texto. coverage es la
-    fracción del área útil que cubre la máscara, y area y page_fraction el
-    tamaño de la región en píxeles y como fracción de la página; con sus valores
-    por defecto se aplica solo la regla de fondo (así la usa la evaluación).
+    fracción del área útil que cubre la máscara (hasta limite_mascara, o
+    MASCARA_EXTENSA), y area y page_fraction el tamaño de la región en píxeles y
+    como fracción de la página; con sus valores por defecto se aplica solo la regla
+    de fondo (así la usa la evaluación).
     umbrales = (entropía, tono) reemplaza a ENTROPIA_LISO y TONO_TINTA; solo lo
     usa la calibración para probar otros valores.
 
@@ -1292,7 +1319,7 @@ def classify_background(
             'ser solo texto y la máscara puede incluir dibujo. Revísala o marca '
             'solo las letras.',
         )
-    if coverage > 0.36:
+    if coverage > (MASCARA_EXTENSA if limite_mascara is None else limite_mascara):
         return (
             'Revisar máscara',
             'Revisión manual',

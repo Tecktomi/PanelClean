@@ -845,12 +845,15 @@ ZONAS_POR_LIBRO = 120
 DIBUJO_VISIBLE = 50  # px de dibujo borrado desde los que una zona cuenta como dañina
 
 
-def _mascara_de(imagen: np.ndarray, cajas: list[tuple]) -> np.ndarray:
-    """Unión, del tamaño de la página, de las máscaras de cada caja (x1, y1, x2, y2)."""
+def _mascara_de(
+    imagen: np.ndarray, cajas: list[tuple], origen: str = 'Manual'
+) -> np.ndarray:
+    """Unión, del tamaño de la página, de las máscaras de cada caja (x1, y1, x2, y2),
+    como regiones del origen dado."""
     total = np.zeros(imagen.shape[:2], bool)
     for caja in cajas:
         try:
-            r = V.bounded_region(imagen, caja)
+            r = V.bounded_region(imagen, caja, origin=origen)
         except ValueError:
             continue
         total[r.y : r.y + r.h, r.x : r.x + r.w] |= (
@@ -927,8 +930,11 @@ def evaluar_zonas(
                     'bloques_fuera': fuera,
                 }
                 # Sin bloques, la aplicación usa el rectángulo tal cual.
-                for modo, cajas in (('zona', [zona]), ('ajuste', bloques or [zona])):
-                    mascara = _mascara_de(imagen, cajas)
+                for modo, cajas, origen in (
+                    ('zona', [zona], 'Manual'),
+                    ('ajuste', bloques or [zona], 'Zona' if bloques else 'Manual'),
+                ):
+                    mascara = _mascara_de(imagen, cajas, origen)
                     fila[f'cubierto_{modo}'] = float(
                         (mascara & letras).sum() / letras.sum()
                     )

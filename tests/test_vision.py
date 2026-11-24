@@ -404,6 +404,60 @@ class DetectorTextoTest(unittest.TestCase):
         cv2.line(linea, (120, 200), (230, 200), (0, 0, 0), 4)
         self.assertEqual(V.texto_en_zona(linea, (20, 20, 380, 380)), [])
 
+    def region_con_renglones(self, origen):
+        """Región de dos renglones; en el segundo las letras se tocan, como en un
+        escaneo chico: es una sola pieza casi tan ancha como la región."""
+        img = np.full((160, 200, 3), 255, np.uint8)
+        for k, letra in enumerate('HEY'):
+            cv2.putText(
+                img,
+                letra,
+                (60 + 24 * k, 70),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 0),
+                3,
+            )
+        cv2.rectangle(img, (54, 90), (136, 103), (0, 0, 0), -1)
+        for x in range(60, 132, 12):  # huecos de las letras, de 5 px de alto
+            cv2.rectangle(img, (x, 94), (x + 5, 98), (255, 255, 255), -1)
+        r = V.bounded_region(img, (46, 44, 146, 112), origin=origen)
+        V.generate_mask(img, r, V.Options())
+        return r, (r.mask[90 - r.y : 104 - r.y, 54 - r.x : 137 - r.x] > 0).mean()
+
+    def test_un_renglon_de_letras_que_se_tocan_no_es_una_linea(self):
+        # Hecha a mano, la región puede incluir un borde: ese trazo se protege.
+        self.assertLess(self.region_con_renglones('Manual')[1], 0.1)
+        # Ajustada a las letras, una pieza que queda entera adentro es texto.
+        for origen in V.REGIONES_AJUSTADAS:
+            self.assertGreater(self.region_con_renglones(origen)[1], 0.6, origen)
+
+    def test_una_linea_que_cruza_una_region_ajustada_se_protege(self):
+        img = np.full((160, 200, 3), 255, np.uint8)
+        cv2.putText(img, 'HEY', (60, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 3)
+        cv2.line(img, (0, 95), (199, 95), (0, 0, 0), 3)  # borde de viñeta
+        r = V.bounded_region(img, (50, 40, 130, 105), origin='Detectada')
+        V.generate_mask(img, r, V.Options())
+        self.assertFalse((r.mask[93 - r.y : 98 - r.y] > 0).any())
+        self.assertTrue((r.mask > 0).any())
+
+    def test_una_region_ajustada_admite_mas_mascara(self):
+        # Letras grandes y juntas: la máscara cubre casi la mitad del rectángulo.
+        img = np.full((120, 160, 3), 255, np.uint8)
+        for k in range(5):
+            cv2.rectangle(img, (44 + 13 * k, 45), (52 + 13 * k, 71), (0, 0, 0), -1)
+        metodos = {}
+        for origen in ('Manual', 'Detectada'):
+            r = V.bounded_region(img, (38, 38, 114, 78), origin=origen)
+            V.generate_mask(img, r, V.Options())
+            cubre = (r.mask > 0).mean()
+            self.assertTrue(
+                V.MASCARA_EXTENSA < cubre < V.MASCARA_EXTENSA_AJUSTADA, cubre
+            )
+            metodos[origen] = r.suggested_method
+        self.assertEqual(metodos['Manual'], 'Revisión manual')
+        self.assertEqual(metodos['Detectada'], 'Relleno local')
+
     def test_un_punto_no_confirma_una_region_gigante(self):
         papel = V.papel_de_pagina(self.img)
         alto, ancho = self.img.shape[:2]
