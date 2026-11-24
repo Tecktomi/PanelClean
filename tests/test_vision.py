@@ -404,6 +404,39 @@ class DetectorTextoTest(unittest.TestCase):
         cv2.line(linea, (120, 200), (230, 200), (0, 0, 0), 4)
         self.assertEqual(V.texto_en_zona(linea, (20, 20, 380, 380)), [])
 
+    def pagina_con_texto_junto_a_figuras(self):
+        """Página donde el texto comparte papel con figuras grandes del dibujo."""
+        img = np.full((1170, 830, 3), 255, np.uint8)
+        for k in range(6):  # figuras de 60 a 160 px alrededor del texto
+            x, y = 60 + 130 * k, 120 if k % 2 else 420
+            cv2.ellipse(img, (x, y), (30 + 8 * k, 70), 20 * k, 0, 360, (0, 0, 0), -1)
+        for fila, palabra in enumerate(('ME DIO', 'MUCHO', 'MIEDO')):
+            for k, letra in enumerate(palabra):
+                cv2.putText(
+                    img,
+                    letra,
+                    (350 + 16 * k, 250 + 24 * fila),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 0, 0),
+                    2,
+                )
+        return img, (348, 232, 448, 302)
+
+    def test_el_texto_junto_a_figuras_grandes_es_un_candidato(self):
+        # El tamaño de letra estimado es el de las figuras: antes el texto se unía a
+        # ellas. Al probar otros tamaños, queda también como un bloque propio.
+        img, texto = self.pagina_con_texto_junto_a_figuras()
+
+        def hay_uno_propio(candidatos):
+            """Si algún candidato contiene el texto y poco más."""
+            chicos = [r for r in candidatos if r.w * r.h < 2 * area(texto)]
+            return self.caja_parecida(chicos, texto) is not None
+
+        con_un_tamano, _ = V.candidatos_de_texto(img, tamanos=())
+        self.assertFalse(hay_uno_propio(con_un_tamano), 'no hay nada que probar')
+        self.assertTrue(hay_uno_propio(V.candidatos_de_texto(img)[0]))
+
     def region_con_renglones(self, origen):
         """Región de dos renglones; en el segundo las letras se tocan, como en un
         escaneo chico: es una sola pieza casi tan ancha como la región."""
@@ -457,6 +490,38 @@ class DetectorTextoTest(unittest.TestCase):
             metodos[origen] = r.suggested_method
         self.assertEqual(metodos['Manual'], 'Revisión manual')
         self.assertEqual(metodos['Detectada'], 'Relleno local')
+
+    def test_sin_solapes_prefiere_el_bloque_completo(self):
+        globo, renglon = (0, 0, 100, 90), (5, 5, 95, 30)
+        # El renglón parece un poco más texto, pero el globo lo contiene entero.
+        self.assertEqual(V.sin_solapes([globo, renglon], np.array([0.7, 0.9])), [0])
+        # Un bloque mucho menos confiable que su contenido es texto unido a dibujo.
+        self.assertEqual(V.sin_solapes([globo, renglon], np.array([0.5, 0.9])), [1])
+        # Si son casi el mismo, gana el más confiable y, si empatan, el más ajustado.
+        justo, holgado = (5, 5, 95, 85), (0, 0, 100, 90)
+        self.assertEqual(V.sin_solapes([justo, holgado], np.array([0.9, 0.9])), [0])
+        self.assertEqual(V.sin_solapes([justo, holgado], np.array([0.8, 0.9])), [1])
+        # Y uno dudoso no reemplaza a uno que se limpiaría solo.
+        self.assertEqual(V.sin_solapes([globo, renglon], np.array([0.4, 0.6])), [1])
+
+    def test_sin_solapes_conserva_lo_que_no_se_toca(self):
+        cajas = [(0, 0, 50, 50), (200, 0, 250, 50), (5, 5, 40, 40), (210, 5, 240, 40)]
+        # Donde nada se propone queda el más confiable, por si el usuario marca ahí.
+        self.assertEqual(V.sin_solapes(cajas, np.array([0.9, 0.1, 0.8, 0.2])), [0, 3])
+        self.assertEqual(V.sin_solapes([], np.zeros(0)), [])
+
+    def test_ninguna_region_propuesta_contiene_a_otra(self):
+        img, _ = self.pagina_con_texto_junto_a_figuras()
+        for pagina in (self.img, img):
+            regiones = V.puntuar_candidatos(pagina)
+            for a in regiones:
+                for b in regiones:
+                    if a is not b:
+                        comun = interseccion(
+                            (a.x, a.y, a.x + a.w, a.y + a.h),
+                            (b.x, b.y, b.x + b.w, b.y + b.h),
+                        )
+                        self.assertLessEqual(comun, 0.5 * b.w * b.h)
 
     def test_un_punto_no_confirma_una_region_gigante(self):
         papel = V.papel_de_pagina(self.img)

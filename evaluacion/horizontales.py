@@ -61,6 +61,24 @@ def _borrar_letras(
     return nueva, float((zona > V.PAPEL_CLARO).mean()) >= 0.9
 
 
+def degradar(
+    imagen: np.ndarray, cajas: list[Caja], rng: np.random.Generator
+) -> tuple[np.ndarray, list[Caja]]:
+    """La página como un escaneo chico y comprimido, y sus cajas a ese tamaño.
+
+    Muchas páginas que circulan miden 500 a 620 px de ancho y están muy comprimidas:
+    las letras quedan borrosas y se tocan.
+    """
+    k = int(rng.integers(500, 620)) / min(imagen.shape[:2])
+    chica = cv2.resize(imagen, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
+    calidad = [cv2.IMWRITE_JPEG_QUALITY, int(rng.integers(55, 85))]
+    _, datos = cv2.imencode('.jpg', chica, calidad)
+    return (
+        cv2.imdecode(datos, cv2.IMREAD_COLOR),
+        [tuple(int(round(v * k)) for v in c) for c in cajas],
+    )
+
+
 def traducir(
     imagen: np.ndarray, textos: list[dict], rng: np.random.Generator
 ) -> tuple[np.ndarray, list[Caja]]:

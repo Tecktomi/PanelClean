@@ -317,6 +317,7 @@ class DetectorTest(unittest.TestCase):
         return {
             'grupo': grupo,
             'es_texto': str(es_texto),
+            'enteros': '0' if es_texto else '',
             **{r: str(valor) for r in V.RASGOS_TEXTO},
         }
 
@@ -369,6 +370,54 @@ class DetectorTest(unittest.TestCase):
         self.assertEqual(int((X[:, 0] >= 500).sum()), 40)  # 4 ejemplos × 10
         self.assertEqual(len(X), len(y))
 
+    def test_un_trozo_de_texto_no_es_ejemplo_de_nada(self):
+        entero, trozo, dibujo = (self.fila('a', v, int(v < 3)) for v in (1, 2, 3))
+        trozo['enteros'] = ''
+        X, y = D.ejemplos([entero, trozo, dibujo])
+        self.assertEqual(X[:, 0].tolist(), [1.0, 3.0])
+        self.assertEqual(y.tolist(), [1, 0])
+
+    def test_el_entrenamiento_sale_siempre_igual(self):
+        X = np.random.default_rng(1).random((300, len(V.RASGOS_TEXTO)), np.float32)
+        y = (X[:, 0] + 0.5 * X[:, 1] > 0.7).astype(np.int32)
+        a = V.probabilidad_de_texto(D.entrenar(X, y), X)
+        cv2.setRNGSeed(99)  # lo que haya pasado antes no influye
+        self.assertTrue(np.array_equal(a, V.probabilidad_de_texto(D.entrenar(X, y), X)))
+
+    def test_se_mide_sin_contar_dos_veces_el_mismo_texto(self):
+        def fila(x, y, w, h, texto, cubre):
+            return {
+                'grupo': 'a',
+                'pagina': '1',
+                'tipo': 'original',
+                **dict(zip('xywh', map(str, (x, y, w, h)))),
+                'es_texto': '1',
+                'texto': str(texto),
+                'cubre': cubre,
+                'limpiable': '0',
+            }
+
+        filas = [
+            fila(0, 0, 100, 90, 0, '0:1.00'),
+            fila(5, 5, 90, 25, 0, '0:0.33'),  # un renglón del anterior
+            fila(300, 0, 60, 20, 1, '1:0.40'),  # solo un trozo del segundo texto
+        ]
+        m = D.medir_deteccion(filas, np.array([0.8, 0.9, 0.9]), 0.5, 2)
+        self.assertEqual(m['detecciones'], 2)
+        self.assertEqual((m['precision'], m['recall']), (1.0, 1.0))
+        self.assertEqual(m['enteros'], 0.5, 'el segundo texto queda a medias')
+
+    def test_un_escaneo_chico_conserva_las_cajas(self):
+        img = np.full((1200, 800, 3), 255, np.uint8)
+        cv2.rectangle(img, (200, 300), (399, 499), (0, 0, 0), -1)
+        chica, [caja] = horizontales.degradar(
+            img, [(200, 300, 400, 500)], horizontales.azar('obra', 1)
+        )
+        self.assertTrue(500 <= chica.shape[1] < 620, chica.shape)
+        x1, y1, x2, y2 = caja
+        self.assertLess(chica[y1 + 3 : y2 - 3, x1 + 3 : x2 - 3].mean(), 10)
+        self.assertGreater(chica[: y1 - 5].mean(), 245)
+
     def test_una_region_gigante_no_es_texto_aunque_su_centro_caiga_en_uno(self):
         texto = (100, 100, 150, 200)
         self.assertEqual(K.texto_del_candidato((95, 95, 155, 205), [texto]), 0)
@@ -393,12 +442,11 @@ class DetectorTest(unittest.TestCase):
             )
         comun = {'grupo': 'g', 'pagina': 'p', 'tipo': 'propia'}
         caja = (50, 80, 190, 135)
-        self.assertEqual(
-            [f['es_texto'] for f in D.medir_pagina(img, [caja], [], comun)], [1]
-        )
-        self.assertEqual(
-            [f['es_texto'] for f in D.medir_pagina(img, [], [], comun)], [0]
-        )
+        marcada = D.medir_pagina(img, [caja], [], comun)
+        self.assertEqual({f['es_texto'] for f in marcada}, {1})
+        self.assertIn('0', [f['enteros'] for f in marcada])
+        sin_marcar = D.medir_pagina(img, [], [], comun)
+        self.assertEqual({f['es_texto'] for f in sin_marcar}, {0})
         self.assertEqual(D.medir_pagina(img, [], [caja], comun), [])
 
     def test_la_traduccion_simulada_es_reproducible(self):

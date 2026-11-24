@@ -189,6 +189,9 @@ TRAZO_GRUESO = 1.5  # …en una pieza con algún punto a esta distancia (px) de 
 UNION_LETRAS = 1.2  # piezas más cercanas que esto (en tamaños de letra) son un bloque
 MARGEN_BLOQUE = 0.25  # margen alrededor de cada bloque, en tamaños de letra
 ALTO_PALABRA = 9  # px: alto mínimo de una palabra cuyas letras se tocan
+# Tamaños de letra que el detector prueba además del estimado, como fracción del
+# mayor posible (LETRA_MAXIMA): de 36 a 9 px en una hoja de 830 px de ancho.
+TAMANOS_LETRA = (0.62, 0.38, 0.24, 0.15)
 
 
 def _encerrado(forma: np.ndarray) -> np.ndarray:
@@ -329,6 +332,24 @@ def preparar_pagina(image: np.ndarray) -> Pagina:
     return Pagina(cv2.GaussianBlur(limpio, (3, 3), 0), limpio, crudo, escala)
 
 
+def _comun(a: tuple, b: tuple) -> float:
+    """Área común de dos rectángulos (x1, y1, x2, y2)."""
+    ancho = min(a[2], b[2]) - max(a[0], b[0])
+    alto = min(a[3], b[3]) - max(a[1], b[1])
+    return float(max(0, ancho) * max(0, alto))
+
+
+def _area(a: tuple) -> float:
+    """Área de un rectángulo (x1, y1, x2, y2)."""
+    return float((a[2] - a[0]) * (a[3] - a[1]))
+
+
+def _iou_cajas(a: tuple, b: tuple) -> float:
+    """Intersección sobre unión de dos rectángulos (x1, y1, x2, y2)."""
+    comun = _comun(a, b)
+    return comun / (_area(a) + _area(b) - comun) if comun else 0.0
+
+
 def _region_de(image: np.ndarray, caja: tuple, escala: float, origin: str) -> Region:
     """Región del archivo que corresponde a una caja (x1, y1, x2, y2) de trabajo."""
     x1, y1 = int(caja[0] / escala), int(caja[1] / escala)
@@ -336,20 +357,39 @@ def _region_de(image: np.ndarray, caja: tuple, escala: float, origin: str) -> Re
     return bounded_region(image, (x1, y1, x2, y2), origin=origin)
 
 
-def _bloques_de_texto(gris: np.ndarray, pagina: Pagina) -> list[tuple]:
-    """Bloques de texto (x1, y1, x2, y2) de un recorte de la página preparada.
+@dataclass
+class _Globo:
+    """Tinta dentro de una zona de papel, separada en piezas (índice 0 = papel).
 
-    gris tiene el papel en blanco; las letras son los huecos de ese papel. Los
-    huecos se agrupan por globo y por cercanía, según el tamaño de letra que se
-    mide en cada globo (con un tope: si no, en una zona de papel con pocas figuras
-    grandes adentro se tomaban las figuras por letras y se unía la hoja entera).
-    Se descartan los grupos sin tinta negra de trazo grueso (pelos, gotas de sudor
-    y líneas finas del dibujo también son huecos del papel), las piezas sueltas
-    chicas o alargadas y los bloques más grandes que cualquier texto.
+    x, y: origen de la zona en la imagen. etiquetas y stats: piezas conectadas.
+    oscuro y grosor: el punto más oscuro y el más grueso de cada pieza. tinta: si la
+    pieza puede ser parte de una letra. lado: el mayor de su ancho y su alto.
+    letra: tamaño de letra estimado.
     """
-    alto, ancho = gris.shape
-    alto_p, ancho_p = pagina.gris.shape
-    tope = max(40.0, LETRA_MAXIMA * min(alto_p, ancho_p))
+
+    x: int
+    y: int
+    etiquetas: np.ndarray
+    stats: np.ndarray
+    oscuro: np.ndarray
+    grosor: np.ndarray
+    tinta: np.ndarray
+    lado: np.ndarray
+    letra: float = 0.0
+
+
+def _tope_de_letra(pagina: Pagina) -> float:
+    """Tamaño máximo de una letra en la página, en px de trabajo."""
+    return max(40.0, LETRA_MAXIMA * min(pagina.gris.shape))
+
+
+def _globos_con_tinta(gris: np.ndarray, pagina: Pagina) -> list[_Globo]:
+    """Zonas de papel con tinta adentro, cada una con su tamaño de letra estimado.
+
+    El tamaño es el de las piezas de esa zona, si alcanzan para medirlo, o el de
+    todas. Tiene un tope: si no, en una zona de papel con pocas figuras grandes
+    adentro se tomaban las figuras por letras y se unía la hoja entera.
+    """
     globos = []
     for x, y, huecos in _huecos_del_papel(gris):
         n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(huecos, 8)
@@ -367,59 +407,99 @@ def _bloques_de_texto(gris: np.ndarray, pagina: Pagina) -> list[tuple]:
         tinta = (stats[:, 4] >= 2) & (oscuro <= TINTA_VISIBLE) & ~puntos
         tinta[0] = False
         lado = np.maximum(stats[:, 2], stats[:, 3])
-        globos.append((x, y, etiquetas, stats, oscuro, grosor, tinta, lado))
-    medibles = [g[7][g[6] & (g[7] >= 3)] for g in globos]
+        globos.append(_Globo(x, y, etiquetas, stats, oscuro, grosor, tinta, lado))
+    medibles = [g.lado[g.tinta & (g.lado >= 3)] for g in globos]
     if not medibles or not np.concatenate(medibles).size:
         return []
-    letra_zona = float(np.percentile(np.concatenate(medibles), 75))
+    de_todas = float(np.percentile(np.concatenate(medibles), 75))
+    tope = _tope_de_letra(pagina)
+    for g, propios in zip(globos, medibles):
+        letra = float(np.percentile(propios, 75)) if len(propios) >= 4 else de_todas
+        g.letra = min(letra, tope)
+    return globos
+
+
+def _agrupar_letras(
+    globo: _Globo, letra: float, forma: tuple[int, int], pagina: Pagina
+) -> list[tuple]:
+    """Bloques de texto (x1, y1, x2, y2) de una zona, si sus letras miden `letra` px.
+
+    Las piezas se agrupan por cercanía. Se descartan los grupos sin tinta negra de
+    trazo grueso (pelos, gotas de sudor y líneas finas del dibujo también son huecos
+    del papel), las piezas sueltas chicas o alargadas y los bloques más grandes que
+    cualquier texto.
+    """
+    alto, ancho = forma
+    alto_p, ancho_p = pagina.gris.shape
+    stats = globo.stats
+    sirve = globo.tinta & (globo.lado <= 3 * letra)
+    de_letra = sirve & (globo.oscuro <= TINTA_NEGRA) & (globo.grosor >= TRAZO_GRUESO)
+    if not de_letra.any():
+        return []
+    piezas = np.where(sirve[globo.etiquetas], 255, 0).astype(np.uint8)
+    union = max(3, int(round(UNION_LETRAS * letra)))
+    nucleo = cv2.getStructuringElement(cv2.MORPH_RECT, (union, union))
+    grupos = cv2.connectedComponents(cv2.dilate(piezas, nucleo), connectivity=8)[1]
+    # Grupo de cada pieza: el de uno cualquiera de sus píxeles.
+    _, primero = np.unique(globo.etiquetas.ravel(), return_index=True)
+    grupo = np.where(sirve, grupos.ravel()[primero], 0)
+    margen = max(3, int(round(MARGEN_BLOQUE * letra)))
     cajas = []
-    for (x, y, etiquetas, stats, oscuro, grosor, tinta, lado), propios in zip(
-        globos, medibles
-    ):
-        # Tamaño de letra: el de este globo si hay piezas suficientes para medirlo.
-        letra = float(np.percentile(propios, 75)) if len(propios) >= 4 else letra_zona
-        letra = min(letra, tope)
-        sirve = tinta & (lado <= 3 * letra)
-        de_letra = sirve & (oscuro <= TINTA_NEGRA) & (grosor >= TRAZO_GRUESO)
-        piezas = np.where(sirve[etiquetas], 255, 0).astype(np.uint8)
-        if not piezas.any():
+    for b in np.unique(grupo[sirve]):
+        ids = np.flatnonzero(grupo == b)
+        x1, y1 = int(stats[ids, 0].min()), int(stats[ids, 1].min())
+        x2 = int((stats[ids, 0] + stats[ids, 2]).max())
+        y2 = int((stats[ids, 1] + stats[ids, 3]).max())
+        largo, corto = max(x2 - x1, y2 - y1), min(x2 - x1, y2 - y1)
+        if largo < 0.5 * letra or not de_letra[ids].any():
             continue
-        union = max(3, int(round(UNION_LETRAS * letra)))
-        bloques = cv2.connectedComponents(
-            cv2.dilate(
-                piezas, cv2.getStructuringElement(cv2.MORPH_RECT, (union, union))
-            ),
-            connectivity=8,
-        )[1]
-        bloques[piezas == 0] = 0
-        margen = max(3, int(round(MARGEN_BLOQUE * letra)))
-        for b in np.unique(bloques)[1:]:
-            ys, xs = np.nonzero(bloques == b)
-            ids = np.unique(etiquetas[ys, xs])
-            x1, x2 = int(xs.min()), int(xs.max()) + 1
-            y1, y2 = int(ys.min()), int(ys.max()) + 1
-            largo, corto = max(x2 - x1, y2 - y1), min(x2 - x1, y2 - y1)
-            if largo < 0.5 * letra or not de_letra[ids].any():
-                continue
-            # Una pieza suelta: una mota, una línea del dibujo… o una palabra corta
-            # en letra latina, cuyas letras se tocan («HEY»): alargada, pero con el
-            # alto de una letra.
-            if len(ids) == 1 and (
-                largo < 0.8 * letra
-                or (largo > 3 * corto and (corto < ALTO_PALABRA or largo > 8 * corto))
-            ):
-                continue
-            area = (x2 - x1) * (y2 - y1)
-            if area > AREA_REVISAR and area > BLOQUE_MAXIMO * alto_p * ancho_p:
-                continue  # más grande que cualquier texto: viñeta o dibujo
-            cajas.append(
-                (
-                    max(0, x + x1 - margen),
-                    max(0, y + y1 - margen),
-                    min(ancho, x + x2 + margen),
-                    min(alto, y + y2 + margen),
-                )
+        # Una pieza suelta: una mota, una línea del dibujo… o una palabra corta
+        # en letra latina, cuyas letras se tocan («HEY»): alargada, pero con el
+        # alto de una letra.
+        if len(ids) == 1 and (
+            largo < 0.8 * letra
+            or (largo > 3 * corto and (corto < ALTO_PALABRA or largo > 8 * corto))
+        ):
+            continue
+        area = (x2 - x1) * (y2 - y1)
+        if area > AREA_REVISAR and area > BLOQUE_MAXIMO * alto_p * ancho_p:
+            continue  # más grande que cualquier texto: viñeta o dibujo
+        cajas.append(
+            (
+                max(0, globo.x + x1 - margen),
+                max(0, globo.y + y1 - margen),
+                min(ancho, globo.x + x2 + margen),
+                min(alto, globo.y + y2 + margen),
             )
+        )
+    return cajas
+
+
+def _bloques_de_texto(
+    gris: np.ndarray, pagina: Pagina, tamanos: tuple[float, ...] = ()
+) -> list[tuple]:
+    """Bloques de texto (x1, y1, x2, y2) de un recorte de la página preparada.
+
+    gris tiene el papel en blanco; las letras son los huecos de ese papel. Los
+    huecos se agrupan por globo y por cercanía, según el tamaño de letra estimado en
+    cada globo. Con tamanos (fracciones del tamaño máximo) se prueban además esos
+    otros tamaños: cuando un globo está abierto, o comparte papel con figuras
+    grandes, el estimado no sirve y el texto se une al dibujo o se descarta. Los
+    bloques salen entonces repetidos y a medias: hay que elegir (ver sin_solapes).
+    """
+    tope = _tope_de_letra(pagina)
+    cajas = []
+    for globo in _globos_con_tinta(gris, pagina):
+        propias: list[tuple] = []
+        probados: list[float] = []
+        for letra in (globo.letra, *(t * tope for t in tamanos)):
+            if any(abs(np.log(letra / otro)) < 0.2 for otro in probados):
+                continue  # casi el mismo tamaño: daría los mismos bloques
+            probados.append(letra)
+            for caja in _agrupar_letras(globo, letra, gris.shape, pagina):
+                if all(_iou_cajas(caja, otra) <= 0.9 for otra in propias):
+                    propias.append(caja)
+        cajas += propias
     return cajas
 
 
@@ -484,8 +564,8 @@ def texto_en_zona(
 # por papel blanco. Cada candidato se describe con las medidas de RASGOS_TEXTO
 # y un random forest de OpenCV (cv2.ml.RTrees) da la probabilidad de que sea
 # texto. El modelo se entrena con `python -m evaluacion.entrenar_detector`
-# (OpenMantra sin la obra de prueba, más las etiquetas hechas a mano con
-# `evaluacion.etiquetar --texto`) y se guarda en modelo_texto.yml.
+# (OpenMantra sin la obra reservada, más las páginas propias marcadas con
+# `evaluacion.marcar`) y se guarda en modelo_texto.yml.
 
 RASGOS_TEXTO = (
     'piezas',  # log(1 + piezas de tinta)
@@ -508,13 +588,19 @@ RASGOS_TEXTO = (
 )
 MODELO_TEXTO = Path(__file__).resolve().parent / 'modelo_texto.yml'
 # Cambia cuando cambian los candidatos o sus medidas: las guardadas antes ya no sirven.
-VERSION_RASGOS = 2
+VERSION_RASGOS = 3
 # Gris de la tinta al medir: más estricto que PAPEL_CLARO, así las letras latinas,
 # que van muy juntas, no se funden en una sola pieza por su borde suavizado.
 TINTA_PIEZA = 150
 # Umbrales elegidos con la validación cruzada por obra (ver evaluacion/README.md).
 CONFIANZA_LIMPIAR = 0.5  # desde aquí el modo automático limpia la región
 CONFIANZA_PROPONER = 0.3  # desde aquí se propone; por debajo de LIMPIAR, para revisar
+# Cuánta confianza puede perder un bloque grande frente a los trozos que reemplaza:
+# un renglón suelto suele parecer tan texto como el globo completo.
+CEDER_A_MAYOR = 0.3
+# Si el trozo ocupa al menos esta parte del bloque no es un trozo, sino lo mismo con
+# menos margen: ahí no se cede nada y gana el más confiable (o el más ajustado).
+MISMO_BLOQUE = 0.7
 
 
 def interior_de_globos(image: np.ndarray) -> np.ndarray:
@@ -585,17 +671,20 @@ def rasgos_de_texto(
 
 
 def candidatos_de_texto(
-    image: np.ndarray, pagina: Optional[Pagina] = None
+    image: np.ndarray,
+    pagina: Optional[Pagina] = None,
+    tamanos: tuple[float, ...] = TAMANOS_LETRA,
 ) -> tuple[list[Region], np.ndarray]:
     """Bloques de texto de la página entera y sus medidas (una fila cada uno).
 
-    Las medidas se toman en la página preparada, así no dependen del tono ni de la
-    resolución del archivo.
+    Se prueban varios tamaños de letra (ver _bloques_de_texto), así que hay bloques
+    repetidos y a medias: se elige con sin_solapes. Las medidas se toman en la página
+    preparada, así no dependen del tono ni de la resolución del archivo.
     """
     pagina = preparar_pagina(image) if pagina is None else pagina
     interior = interior_de_globos(cv2.cvtColor(pagina.limpio, cv2.COLOR_GRAY2BGR))
     pares = []
-    for caja in _bloques_de_texto(pagina.gris, pagina):
+    for caja in _bloques_de_texto(pagina.gris, pagina, tamanos):
         medidas = rasgos_de_texto(pagina.gris, caja, interior)
         if medidas is None:
             continue
@@ -679,30 +768,71 @@ def _papel_alrededor(papel: np.ndarray, caja: tuple[int, int, int, int]) -> int:
     return int(cuentas.argmax()) if cuentas.any() else 0
 
 
+def sin_solapes(cajas: list[tuple], confianzas: np.ndarray) -> list[int]:
+    """Índices de los candidatos que quedan al quitar los repetidos y los trozos.
+
+    Primero, entre los que se propondrían (CONFIANZA_PROPONER), de menor a mayor: un
+    bloque reemplaza a los que contiene si no es mucho menos confiable que ellos
+    (CEDER_A_MAYOR; si son casi lo mismo, si es más confiable) y no cambia texto que
+    se limpiaría solo por uno dudoso. Después, los demás, de más a menos confiable,
+    donde no haya otro: sirven si el usuario marca ahí un punto.
+    """
+
+    def cubre(i: int, j: int) -> bool:
+        """El candidato i contiene más de la mitad del candidato j."""
+        return _comun(cajas[i], cajas[j]) > 0.5 * _area(cajas[j])
+
+    p = np.asarray(confianzas, float)
+    elegidos: list[int] = []
+    propuestos = [i for i in range(len(p)) if p[i] >= CONFIANZA_PROPONER]
+    for i in sorted(propuestos, key=lambda i: _area(cajas[i])):
+        trozos = [j for j in elegidos if cubre(i, j)]
+        if trozos:
+            mejor = max(p[j] for j in trozos)
+            iguales = [
+                j for j in trozos if _area(cajas[j]) > MISMO_BLOQUE * _area(cajas[i])
+            ]
+            if (
+                p[i] < mejor - CEDER_A_MAYOR
+                or p[i] < CONFIANZA_LIMPIAR <= mejor
+                or any(p[i] <= p[j] for j in iguales)
+            ):
+                continue
+        elegidos = [j for j in elegidos if j not in trozos] + [i]
+    for i in sorted(set(range(len(p))) - set(propuestos), key=lambda i: -p[i]):
+        if not any(cubre(i, j) or cubre(j, i) for j in elegidos):
+            elegidos.append(i)
+    return sorted(elegidos)
+
+
 def puntuar_candidatos(
     image: np.ndarray,
     modelo=None,
     papel: Optional[np.ndarray] = None,
     pagina: Optional[Pagina] = None,
 ) -> list[Region]:
-    """Todos los candidatos de la página, cada uno con su confianza de ser texto
-    y la zona de papel (globo) que lo rodea.
+    """Candidatos de la página, sin repetidos ni trozos (ver sin_solapes), cada uno con
+    su confianza de ser texto y la zona de papel (globo) que lo rodea.
 
-    Sin modelo entrenado, todos quedan en CONFIANZA_PROPONER: se proponen pero
-    ninguno se limpia solo.
+    Sin modelo entrenado no hay cómo elegir entre tamaños de letra: se usa solo el
+    estimado, y todos quedan en CONFIANZA_PROPONER (ninguno se limpia solo).
     """
     pagina = preparar_pagina(image) if pagina is None else pagina
     papel = papel_de_pagina(image, pagina) if papel is None else papel
-    regiones, medidas = candidatos_de_texto(image, pagina)
     modelo = modelo if modelo is not None else cargar_modelo()
     if modelo is None:
+        regiones, _ = candidatos_de_texto(image, pagina, ())
         probabilidades = np.full(len(regiones), CONFIANZA_PROPONER)
     else:
+        regiones, medidas = candidatos_de_texto(image, pagina)
         probabilidades = probabilidad_de_texto(modelo, medidas)
-    for r, p in zip(regiones, probabilidades):
-        r.confianza = float(p)
-        r.papel = _papel_alrededor(papel, (r.x, r.y, r.x + r.w, r.y + r.h))
-    return regiones
+    cajas = [(r.x, r.y, r.x + r.w, r.y + r.h) for r in regiones]
+    elegidas = []
+    for k in sin_solapes(cajas, probabilidades):
+        regiones[k].confianza = float(probabilidades[k])
+        regiones[k].papel = _papel_alrededor(papel, cajas[k])
+        elegidas.append(regiones[k])
+    return elegidas
 
 
 def demasiado_grande(ancho: int, alto: int, forma_pagina: tuple[int, ...]) -> bool:

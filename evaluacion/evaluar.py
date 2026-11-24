@@ -521,8 +521,9 @@ def evaluar_detector_texto(
         }
         # Criterio original: cobertura del 80 % de la caja anotada.
         aceptadas: dict = {}
-        for f, c in zip(sub, q):
-            if f['tipo'] == 'original' and c >= V.CONFIANZA_LIMPIAR:
+        for i in D.elegidas(sub, q):
+            if q[i] >= V.CONFIANZA_LIMPIAR:
+                f = sub[i]
                 x, y, w, h = (int(f[k]) for k in ('x', 'y', 'w', 'h'))
                 aceptadas.setdefault((f['grupo'], f['pagina']), []).append(
                     (x, y, x + w, y + h)
@@ -536,13 +537,14 @@ def evaluar_detector_texto(
             correctas, medidas[nombre]['limpiar']['detecciones'], hallados, n
         )
     dev = [i for i, f in enumerate(filas) if f['grupo'] != LIBRO_PRUEBA]
-    medidas['horizontal'] = D.medir_deteccion(
-        [filas[i] for i in dev],
-        p[dev],
-        V.CONFIANZA_LIMPIAR,
-        sum(totales[g] for g in conjuntos['desarrollo']),
-        'horizontal',
-    )
+    for tipo in ('horizontal', 'horizontal_baja'):
+        medidas[tipo] = D.medir_deteccion(
+            [filas[i] for i in dev],
+            p[dev],
+            V.CONFIANZA_LIMPIAR,
+            sum(totales[g] for g in conjuntos['desarrollo']),
+            tipo,
+        )
     propios = D.textos_propios()
     medidas['propias'] = {}
     for g in dict.fromkeys(f['grupo'] for f in propias):
@@ -563,14 +565,10 @@ def evaluar_detector_texto(
                 [propias[i] for i in sel], q, V.CONFIANZA_LIMPIAR, propios[g], 'propia'
             )
             medidas['propias'][g].append(('viendo otras de sus páginas', m))
+    columnas = ('grupo', 'pagina', 'x', 'y', 'w', 'h', 'es_texto', 'px_dibujo')
     salida = [
-        {
-            k: f[k]
-            for k in ('grupo', 'pagina', 'x', 'y', 'w', 'h', 'es_texto', 'px_dibujo')
-        }
-        | {'confianza': round(float(c), 3)}
-        for f, c in zip(filas, p)
-        if f['tipo'] == 'original'
+        {k: filas[i][k] for k in columnas} | {'confianza': round(float(p[i]), 3)}
+        for i in D.elegidas(filas, p)
     ]
     return salida, medidas
 
@@ -611,9 +609,10 @@ VARIANTES = {  # nombre: (cómo se altera la página, escala)
 def evaluar_escaneos(datos: list[dict], cada: int = 6) -> list[dict]:
     """Candidatos y clics en páginas de desarrollo alteradas como escaneos distintos.
 
-    No depende del modelo: mide qué textos aparecen entre los candidatos y qué pasa
-    al hacer clic en el centro de cada texto (si queda una región correcta y si se
-    confirma alguna gigante).
+    Mide qué textos aparecen entre los candidatos y qué pasa al hacer clic en el
+    centro de cada texto (si queda una región correcta y si se confirma alguna
+    gigante). El modelo interviene solo para elegir entre candidatos que se solapan;
+    es el final, que se entrenó con estas páginas sin alterar.
     """
     paginas = [
         pagina
@@ -629,9 +628,7 @@ def evaluar_escaneos(datos: list[dict], cada: int = 6) -> list[dict]:
             imagen = alterar(base)
             preparada = V.preparar_pagina(imagen)
             papel = V.papel_de_pagina(imagen, preparada)
-            candidatos, _ = V.candidatos_de_texto(imagen, preparada)
-            for r in candidatos:
-                r.papel = V._papel_alrededor(papel, (r.x, r.y, r.x + r.w, r.y + r.h))
+            candidatos = V.puntuar_candidatos(imagen, papel=papel, pagina=preparada)
             limite = GIGANTE * imagen.shape[0] * imagen.shape[1]
             for t in pagina['text']:
                 caja = tuple(
@@ -685,12 +682,15 @@ def resumen_deteccion(
     partes = ['## 5. Detección de texto (OpenMantra)', '']
     partes.append(
         'Detector de «Detectar texto» y de «Procesar todas»: bloques de tinta rodeados de '
-        'papel en la página entera, filtrados por un random forest de OpenCV que mira '
-        f'{len(V.RASGOS_TEXTO)} medidas de cada bloque (`entrenar_detector.py`). Se '
+        'papel en la página entera, buscados con varios tamaños de letra, filtrados por un '
+        f'random forest de OpenCV que mira {len(V.RASGOS_TEXTO)} medidas de cada bloque '
+        '(`entrenar_detector.py`); entre los que se solapan queda el más completo. Se '
         f'informan las regiones con confianza ≥ {num(V.CONFIANZA_LIMPIAR, 1)}, las que el '
         'modo automático limpia. Cada obra de desarrollo se mide con un modelo entrenado '
         'sin ella. **Criterio**: una región acierta un texto si su centro cae en la caja '
-        'anotada y no mide más de 3 veces esa caja.'
+        'anotada y no mide más de 3 veces esa caja. **Enteros**: textos con al menos el '
+        f'{num(100 * D.LETRAS_ENTERAS, 0)} % de sus letras dentro de lo que se propone; es '
+        'más exigente, porque con el criterio también acierta un trozo de texto.'
     )
     partes.append('')
     partes.append(
@@ -723,6 +723,7 @@ def resumen_deteccion(
                 num(m['precision']),
                 num(m['recall']),
                 f'**{num(m["f1"])}**',
+                num(m['enteros']),
                 f'{num(cobertura_anterior(g))} → {num(medidas[clave]["cobertura"][2])}',
             ]
         )
@@ -735,6 +736,7 @@ def resumen_deteccion(
                 'Precisión',
                 'Recall',
                 'F1',
+                'Enteros',
                 'F1 con el criterio original (anterior → actual)',
             ],
             filas_tabla,
@@ -768,17 +770,20 @@ def resumen_deteccion(
         f'{miles(total_ant)}).'
     )
     partes.append('')
-    h = medidas['horizontal']
+    h, b = medidas['horizontal'], medidas['horizontal_baja']
     partes.append(
         '**Texto horizontal simulado.** En las páginas de desarrollo con los globos '
         'traducidos al inglés (`horizontales.py`), cada obra sin verla: precisión '
-        f'{num(h["precision"])}, recall {num(h["recall"])} y techo {num(h["techo"])}. Es una '
+        f'{num(h["precision"])}, recall {num(h["recall"])} y techo {num(h["techo"])}. Como '
+        'escaneo chico y comprimido (500 a 620 px de ancho): precisión '
+        f'{num(b["precision"])}, recall {num(b["recall"])} y techo {num(b["techo"])}. Es una '
         'aproximación: las fuentes son las mismas del entrenamiento y no hay páginas reales.'
     )
     partes.append('')
     partes.append(
-        f'**Escaneos distintos y clics** ({escaneos[0]["paginas"]} páginas de desarrollo, '
-        'sin usar el modelo). «Candidatos»: textos que el detector llega a proponer. '
+        f'**Escaneos distintos y clics** ({escaneos[0]["paginas"]} páginas de desarrollo; '
+        'el modelo, que vio esas páginas sin alterar, solo elige entre bloques que se '
+        'solapan). «Candidatos»: textos que el detector llega a proponer. '
         '«Clic»: textos que quedan con una región correcta al hacer clic en su centro. '
         f'«Gigantes»: clics que confirman una región de más del {num(100 * GIGANTE, 0)} % '
         'de la hoja.'
@@ -805,12 +810,22 @@ def resumen_deteccion(
             '**Series propias** (marcadas con `marcar.py`). «Sin verla»: el modelo no se '
             'entrenó con esa serie. «Viendo otras de sus páginas»: se entrenó con parte de '
             'ellas y se midió en las demás. Si la serie no es reservada, sus cajas partieron '
-            'de las propuestas del detector, y eso lo favorece algo.'
+            'de las propuestas del detector, y eso lo favorece algo. Además la serie 1 se '
+            'usó para encontrar qué fallaba y elegir cómo arreglarlo, así que **su resultado '
+            'es optimista**: para uno a ciegas hace falta una serie reservada.'
         )
         partes.append('')
         partes.append(
             tabla(
-                ['Serie', 'Textos', 'Candidatos (techo)', 'Precisión', 'Recall', 'F1'],
+                [
+                    'Serie',
+                    'Textos',
+                    'Candidatos (techo)',
+                    'Precisión',
+                    'Recall',
+                    'F1',
+                    'Enteros',
+                ],
                 [
                     [
                         f'Serie {k} ({como})',
@@ -819,6 +834,7 @@ def resumen_deteccion(
                         num(m['precision']),
                         num(m['recall']),
                         f'**{num(m["f1"])}**',
+                        num(m['enteros']),
                     ]
                     for k, casos in enumerate(medidas['propias'].values(), 1)
                     for como, m in casos

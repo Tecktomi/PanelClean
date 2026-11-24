@@ -6,16 +6,21 @@ el detector con validación cruzada por obra y guarda el random forest final en
 `panelclean/modelo_texto.yml`.
 
 Datos:
-- OpenMantra (`candidatos.csv`, se genera solo). Cada página de desarrollo se usa
-  en tres versiones: la original, la traspuesta (columnas que pasan a renglones) y
-  una con los globos traducidos en renglones (horizontales.py). La obra reservada
-  (`tencho_isoro`) nunca se usa para entrenar.
+- OpenMantra (`candidatos.csv.gz`, se genera solo). Cada página de desarrollo se usa
+  en cuatro versiones: la original, la traspuesta (columnas que pasan a renglones),
+  una con los globos traducidos en renglones (horizontales.py) y esa misma como un
+  escaneo chico y comprimido. La obra reservada (`tencho_isoro`) nunca se usa para
+  entrenar.
 - Páginas propias marcadas con `python -m evaluacion.marcar` (cajas_texto.json). Las
   series reservadas no se usan para entrenar: solo se informa cómo le va en ellas.
   Las medidas de sus candidatos quedan en `candidatos_propios.csv`, así se puede
   reentrenar en un equipo que no tiene las imágenes.
 
-Un candidato es texto si corresponde a una caja (cajas.texto_del_candidato).
+Los candidatos se buscan con varios tamaños de letra, así que hay bloques a medias.
+Para entrenar, un candidato es texto si contiene textos enteros (LETRAS_ENTERAS) sin
+medir más de 3 veces lo que miden; un trozo de un texto no es ejemplo de nada. Para
+medir, los candidatos se eligen como en la aplicación (vision.sin_solapes) y acierta
+el que corresponde a una caja (cajas.texto_del_candidato), como siempre.
 
 Uso, desde la raíz del repositorio:
     .venv\\Scripts\\python -m evaluacion.entrenar_detector
@@ -28,6 +33,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
+import io
 import json
 import time
 from pathlib import Path
@@ -42,12 +49,15 @@ from . import horizontales
 
 CARPETA = Path(__file__).resolve().parent
 DATASET = CARPETA.parent / 'datasets' / 'open-mantra'
-CANDIDATOS = CARPETA / 'candidatos.csv'
+CANDIDATOS = CARPETA / 'candidatos.csv.gz'
 PROPIOS = CARPETA / 'candidatos_propios.csv'
 LIBRO_PRUEBA = 'tencho_isoro'
 # 30 árboles de profundidad 7 rinden igual que bosques más grandes en la validación
 # cruzada, y el modelo pesa menos (≈ 0,6 MB).
 ARBOLES, PROFUNDIDAD, MINIMO_HOJA = 30, 7, 10
+SEMILLA = 2026  # el bosque se entrena con muestras al azar: así sale siempre igual
+# Parte de las letras de un texto que debe contener un bloque para tenerlo entero.
+LETRAS_ENTERAS = 0.85
 # Las páginas propias se repiten hasta pesar esta fracción de OpenMantra: son pocas,
 # pero son del estilo que se quiere limpiar.
 PESO_PROPIAS, REPETIR_MAXIMO = 0.4, 10
@@ -55,13 +65,15 @@ CAMPOS = [
     'version',
     'grupo',
     'pagina',
-    'tipo',  # original, traspuesta, horizontal o propia
+    'tipo',  # original, traspuesta, horizontal, horizontal_baja o propia
     'x',
     'y',
     'w',
     'h',
     'es_texto',
     'texto',
+    'enteros',  # textos que contiene enteros, separados por «;»
+    'cubre',  # parte de las letras de cada texto que contiene: «texto:parte;…»
     'limpiable',
     'px_texto',
     'px_dibujo',
@@ -84,6 +96,37 @@ def _cajas(pagina: dict) -> list[tuple]:
     return [(t['x'], t['y'], t['x'] + t['w'], t['y'] + t['h']) for t in pagina['text']]
 
 
+def _letras(pagina: V.Pagina, caja: tuple) -> tuple[tuple, np.ndarray]:
+    """Letras de un texto anotado: su caja y la máscara de su tinta, en píxeles de
+    trabajo. No cuenta lo que toca el borde de la caja (el contorno del globo), salvo
+    que sea casi todo."""
+    e = pagina.escala
+    alto, ancho = pagina.limpio.shape
+    x1, y1 = max(0, int(caja[0] * e)), max(0, int(caja[1] * e))
+    x2 = min(ancho, int(np.ceil(caja[2] * e)))
+    y2 = min(alto, int(np.ceil(caja[3] * e)))
+    tinta = (pagina.limpio[y1:y2, x1:x2] <= V.TINTA_PIEZA).astype(np.uint8)
+    _, piezas, st, _ = cv2.connectedComponentsWithStats(tinta, 8)
+    toca = (st[:, 0] == 0) | (st[:, 1] == 0)
+    toca |= (st[:, 0] + st[:, 2] >= x2 - x1) | (st[:, 1] + st[:, 3] >= y2 - y1)
+    toca[0] = True
+    libre = ~toca[piezas]
+    if libre.sum() < 0.5 * tinta.sum():
+        libre = tinta > 0
+    return (x1, y1, x2, y2), libre
+
+
+def _parte_cubierta(caja: tuple, letras: tuple[tuple, np.ndarray]) -> float:
+    """Parte de las letras de un texto que queda dentro de la caja (de trabajo)."""
+    (x1, y1, x2, y2), tinta = letras
+    xa, ya = max(caja[0], x1), max(caja[1], y1)
+    xb, yb = min(caja[2], x2), min(caja[3], y2)
+    if xb <= xa or yb <= ya:
+        return 0.0
+    dentro = tinta[ya - y1 : yb - y1, xa - x1 : xb - x1].sum()
+    return float(dentro / max(1, tinta.sum()))
+
+
 def medir_pagina(
     imagen: np.ndarray,
     textos: list[tuple],
@@ -93,7 +136,8 @@ def medir_pagina(
 ) -> list[dict]:
     """Una fila por candidato de la página, con sus medidas y si es texto.
 
-    Se omiten los candidatos que caen en una caja a ignorar. Con con_limpieza se
+    Se omiten los candidatos que caen en una caja a ignorar. De cada uno se guarda
+    también qué parte de las letras de cada texto contiene. Con con_limpieza se
     agrega qué borraría el modo automático: si la región se limpiaría según su fondo
     (limpiable) y cuántos píxeles de su máscara caen dentro y fuera de los textos.
     """
@@ -101,11 +145,18 @@ def medir_pagina(
     for x1, y1, x2, y2 in textos:
         en_textos[y1:y2, x1:x2] = True
     filas = []
-    for r, medidas in zip(*V.candidatos_de_texto(imagen)):
+    preparada = V.preparar_pagina(imagen)
+    letras = [_letras(preparada, t) for t in textos]
+    for r, medidas in zip(*V.candidatos_de_texto(imagen, preparada)):
         d = (r.x, r.y, r.x + r.w, r.y + r.h)
         k = K.texto_del_candidato(d, textos)
         if k < 0 and any(K.centro_en(d, i) for i in ignorar):
             continue
+        trabajo = tuple(int(round(v * preparada.escala)) for v in d)
+        cubre = {j: _parte_cubierta(trabajo, q) for j, q in enumerate(letras)}
+        enteros = [j for j, v in cubre.items() if v >= LETRAS_ENTERAS]
+        if K.area(d) > 3 * sum(K.area(textos[j]) for j in enteros):
+            enteros = []
         fila = {
             'version': V.VERSION_RASGOS,
             **comun,
@@ -115,10 +166,12 @@ def medir_pagina(
             'h': r.h,
             'es_texto': int(k >= 0),
             'texto': k,
+            'enteros': ';'.join(map(str, enteros)),
+            'cubre': ';'.join(f'{j}:{v:.2f}' for j, v in cubre.items() if v >= 0.01),
             'limpiable': '',
             'px_texto': '',
             'px_dibujo': '',
-            **{n: round(float(v), 6) for n, v in zip(V.RASGOS_TEXTO, medidas)},
+            **{n: round(float(v), 4) for n, v in zip(V.RASGOS_TEXTO, medidas)},
         }
         if con_limpieza:
             mascara = V.generate_mask(imagen, r, V.Options()) > 0
@@ -155,6 +208,8 @@ def medir_openmantra(datos: list[dict], avance=print) -> list[dict]:
             rng = horizontales.azar(nombre, pagina['page_index'])
             traducida, cajas = horizontales.traducir(base, pagina['text'], rng)
             filas += medir_pagina(traducida, cajas, [], {**comun, 'tipo': 'horizontal'})
+            baja, cajas = horizontales.degradar(traducida, cajas, rng)
+            filas += medir_pagina(baja, cajas, [], {**comun, 'tipo': 'horizontal_baja'})
         avance(f'  {nombre}: {len(filas)} candidatos ({time.time() - inicio:.0f} s)')
     return filas
 
@@ -198,19 +253,23 @@ def medir_propias(avance=print) -> list[dict]:
 
 
 def leer_csv(ruta: Path) -> list[dict]:
-    """Filas de un CSV (lista vacía si no existe)."""
+    """Filas de un CSV, comprimido (.gz) o no (lista vacía si no existe)."""
     if not ruta.exists():
         return []
-    with open(ruta, encoding='utf-8') as f:
+    abrir = gzip.open if ruta.suffix == '.gz' else open
+    with abrir(ruta, 'rt', encoding='utf-8') as f:
         return list(csv.DictReader(f))
 
 
 def escribir_csv(ruta: Path, campos: list[str], filas: list[dict]) -> None:
-    """Escribe un CSV completo."""
-    with open(ruta, 'w', newline='', encoding='utf-8') as f:
-        escritor = csv.DictWriter(f, fieldnames=campos)
-        escritor.writeheader()
-        escritor.writerows(filas)
+    """Escribe un CSV completo, comprimido si la ruta termina en .gz."""
+    texto = io.StringIO(newline='')
+    escritor = csv.DictWriter(texto, fieldnames=campos)
+    escritor.writeheader()
+    escritor.writerows(filas)
+    datos = texto.getvalue().encode('utf-8')
+    # Sin la fecha en el .gz: los mismos datos dan siempre el mismo archivo.
+    ruta.write_bytes(gzip.compress(datos, mtime=0) if ruta.suffix == '.gz' else datos)
 
 
 def candidatos_openmantra(recalcular: bool = False, avance=print) -> list[dict]:
@@ -222,7 +281,7 @@ def candidatos_openmantra(recalcular: bool = False, avance=print) -> list[dict]:
         and filas[0]['version'] == str(V.VERSION_RASGOS)
     )
     if not vigente:
-        avance('Midiendo los candidatos de OpenMantra (unos 5 minutos)…')
+        avance('Midiendo los candidatos de OpenMantra (unos 15 minutos)…')
         escribir_csv(CANDIDATOS, CAMPOS, medir_openmantra(cargar_openmantra(), avance))
         filas = leer_csv(CANDIDATOS)
     return filas
@@ -241,7 +300,9 @@ def matriz(filas: list[dict]) -> tuple[np.ndarray, np.ndarray]:
 
 
 def entrenar(X: np.ndarray, y: np.ndarray):
-    """Random forest de OpenCV con los parámetros del detector."""
+    """Random forest de OpenCV con los parámetros del detector (siempre el mismo para
+    los mismos datos)."""
+    cv2.setRNGSeed(SEMILLA)
     modelo = cv2.ml.RTrees_create()
     modelo.setMaxDepth(PROFUNDIDAD)
     modelo.setMinSampleCount(MINIMO_HOJA)
@@ -251,14 +312,23 @@ def entrenar(X: np.ndarray, y: np.ndarray):
     return modelo
 
 
+def ejemplos(filas: list[dict]) -> tuple[np.ndarray, np.ndarray]:
+    """(medidas, etiqueta) para entrenar: 1 si el candidato contiene textos enteros y
+    0 si no es texto. Los trozos de un texto se omiten: son letras, pero no conviene
+    proponerlos en vez del texto completo."""
+    utiles = [f for f in filas if f['enteros'] or f['es_texto'] == '0']
+    X, _ = matriz(utiles)
+    return X, np.array([int(bool(f['enteros'])) for f in utiles], np.int32)
+
+
 def entrenar_con(filas: list[dict], propias: list[dict]):
     """Entrena con filas de OpenMantra y de páginas propias, repitiendo estas
     últimas hasta que pesen PESO_PROPIAS de las primeras."""
-    X, y = matriz(filas)
+    X, y = ejemplos(filas)
     if propias:
-        Xp, yp = matriz(propias)
+        Xp, yp = ejemplos(propias)
         veces = min(
-            REPETIR_MAXIMO, max(1, round(PESO_PROPIAS * len(filas) / len(propias)))
+            REPETIR_MAXIMO, max(1, round(PESO_PROPIAS * len(X) / max(1, len(Xp))))
         )
         X = np.vstack([X] + [Xp] * veces)
         y = np.concatenate([y] + [yp] * veces)
@@ -356,6 +426,23 @@ def textos_propios() -> dict[str, int]:
     }
 
 
+def elegidas(filas: list[dict], p: np.ndarray, tipo: str = 'original') -> list[int]:
+    """Índices de las filas que se propondrían, elegidas en cada página como en la
+    aplicación (vision.sin_solapes)."""
+    por_pagina: dict = {}
+    for i, f in enumerate(filas):
+        if f['tipo'] == tipo and p[i] >= V.CONFIANZA_PROPONER:
+            por_pagina.setdefault((f['grupo'], f['pagina']), []).append(i)
+    salida = []
+    for ids in por_pagina.values():
+        cajas = []
+        for i in ids:
+            x, y, w, h = (int(filas[i][k]) for k in ('x', 'y', 'w', 'h'))
+            cajas.append((x, y, x + w, y + h))
+        salida += [ids[k] for k in V.sin_solapes(cajas, p[ids])]
+    return salida
+
+
 def medir_deteccion(
     filas: list[dict],
     p: np.ndarray,
@@ -364,10 +451,21 @@ def medir_deteccion(
     tipo: str = 'original',
 ) -> dict:
     """Precisión, recall y F1 aceptando confianza >= umbral, en las páginas del tipo
-    dado, y el techo: el recall si se aceptaran todos los candidatos. Con px_texto y
-    px_dibujo (solo en las originales), lo que borraría el modo automático."""
-    propias = [(f, q) for f, q in zip(filas, p) if f['tipo'] == tipo]
-    aceptados = [f for f, q in propias if q >= umbral]
+    dado, y el techo: el recall si se aceptaran todos los candidatos.
+
+    enteros es la parte de los textos que quedan con al menos LETRAS_ENTERAS de sus
+    letras dentro de las regiones aceptadas: es más exigente que el recall, que
+    cuenta también un trozo. Con px_texto y px_dibujo (solo en las originales), lo
+    que borraría el modo automático.
+    """
+    propias = [f for f in filas if f['tipo'] == tipo]
+    aceptados = [filas[i] for i in elegidas(filas, p, tipo) if p[i] >= umbral]
+    cubierto: dict = {}
+    for f in aceptados:
+        for parte in filter(None, f['cubre'].split(';')):
+            texto, valor = parte.split(':')
+            clave = (f['grupo'], f['pagina'], texto)
+            cubierto[clave] = cubierto.get(clave, 0.0) + float(valor)
 
     def hallados(conjunto):
         """Textos distintos a los que corresponde algún candidato del conjunto."""
@@ -387,7 +485,8 @@ def medir_deteccion(
         'textos': textos,
         'precision': precision,
         'recall': recall,
-        'techo': hallados([f for f, _ in propias]) / max(1, textos),
+        'techo': hallados(propias) / max(1, textos),
+        'enteros': sum(v >= LETRAS_ENTERAS for v in cubierto.values()) / max(1, textos),
         'f1': 2 * precision * recall / max(1e-9, precision + recall),
         'px_texto': sum(int(f['px_texto']) for f in limpias),
         'px_dibujo': sum(int(f['px_dibujo']) for f in limpias),
@@ -398,7 +497,8 @@ def _linea(nombre: str, m: dict) -> str:
     """Resumen de una medición en una línea."""
     return (
         f'  {nombre}: {m["textos"]} textos · candidatos {m["techo"]:.0%} · '
-        f'P {m["precision"]:.2f} · R {m["recall"]:.2f} · F1 {m["f1"]:.2f}'
+        f'P {m["precision"]:.2f} · R {m["recall"]:.2f} · F1 {m["f1"]:.2f} · '
+        f'enteros {m["enteros"]:.0%}'
     )
 
 
@@ -454,8 +554,9 @@ def main_con(argv: list[str] | None) -> None:
                 print(_linea(f'{grupo} (entrenando con otras de sus páginas)', m))
     if propias:
         print(
-            '\n«candidatos» es el techo: si es bajo, el texto no se propone (está '
-            'sobre dibujo o en globos oscuros) y entrenar no lo arregla.'
+            '\n«candidatos» es el techo: el texto que falta ahí nunca se propone (por '
+            'ejemplo, está sobre dibujo) y entrenar no lo arregla. «Enteros»: textos '
+            f'con al menos el {LETRAS_ENTERAS:.0%} de sus letras dentro de lo propuesto.'
         )
     guardar(modelo)
     importancia = modelo.getVarImportance().ravel()
