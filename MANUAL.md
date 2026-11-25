@@ -1,6 +1,6 @@
 # Manual de instalación y usuario · PanelClean 0.3.1-beta
 
-PanelClean es una aplicación de escritorio para borrar el texto de los globos de manga y reconstruir el fondo que había detrás. La aplicación encuentra el texto de la página (o tú le indicas dónde está con un clic o un rectángulo), separa las letras del dibujo (la *máscara*), reconoce qué tipo de fondo hay detrás y elige cómo rellenarlo. Antes de guardar puedes revisar, corregir y deshacer todo.
+PanelClean es una aplicación de escritorio para borrar el texto de los globos de manga y reconstruir el fondo que había detrás. La aplicación encuentra el texto de la página (o tú le indicas dónde está con un clic o un rectángulo), separa las letras del dibujo (la *máscara*), reconoce qué tipo de fondo hay detrás y elige cómo rellenarlo. Antes de guardar puedes revisar y corregir todo, y deshacer las limpiezas.
 
 Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026).
 
@@ -25,7 +25,7 @@ Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026).
 
 | | |
 |---|---|
-| Sistema | Windows 10 u 11. Linux con escritorio: incluido, pero sin probar |
+| Sistema | Windows 10 u 11, probado desde un Pentium con 4 GB de RAM. Linux: incluido, sin probar |
 | Python | 3.10 o superior |
 | Pantalla | 1366 × 768 o más |
 | Espacio | Unos 50 MB la carpeta del proyecto y unos 200 MB más al instalar |
@@ -39,7 +39,7 @@ Todo lo que instala PanelClean queda dentro de su propia carpeta (en `.venv`). N
 
 1. **Instala Python** desde [python.org](https://www.python.org/downloads/). En la primera pantalla del instalador marca **«Add Python to PATH»**. Si ya tienes Python 3.10 o superior, salta este paso.
 2. **Descarga PanelClean** desde [github.com/Tecktomi/PanelClean](https://github.com/Tecktomi/PanelClean): botón **Code → Download ZIP**, y descomprime **todo** el ZIP en una carpeta (por ejemplo, en el Escritorio). También sirve `git clone https://github.com/Tecktomi/PanelClean.git`.
-3. **Haz doble clic en `INICIAR_WINDOWS.bat`**. La primera vez se abre una consola que prepara el entorno e instala las bibliotecas; tarda unos minutos. Si la instalación se corta (por ejemplo, por la conexión), basta con volver a abrir el archivo: retoma sola.
+3. **Haz doble clic en `INICIAR_WINDOWS.bat`**. La primera vez se abre una consola que prepara el entorno e instala las bibliotecas; tarda de 15 segundos a 2 minutos, según el equipo. Si la instalación se corta (por ejemplo, por la conexión), basta con volver a abrir el archivo: retoma sola.
 4. Las veces siguientes, el mismo doble clic abre la aplicación directamente.
 
 Si ves esta ventana, PanelClean quedó instalado. Empieza sin ninguna página abierta: pulsa **Agregar hojas** para abrir una o varias, o **Ejemplo** para practicar.
@@ -61,7 +61,7 @@ chmod +x INICIAR_LINUX.sh
 ./INICIAR_LINUX.sh
 ```
 
-El lanzador avisa si falta algo y dice cómo instalarlo. **Sin probar:** PanelClean se probó solo en Windows; el equipo no tuvo un computador con Linux. Si falla, avísanos con el mensaje que muestre.
+El lanzador avisa si falta algo y dice cómo instalarlo. **Sin probar:** PanelClean se probó solo en Windows 10 y 11; el equipo no tuvo un computador con Linux. Si falla, avísanos con el mensaje que muestre.
 
 ### Opciones
 
@@ -149,7 +149,7 @@ La barra de estado dice cuántas se limpiaron, con qué método y cuáles quedar
 
 ### Paso 6 · Comparar, deshacer y quitar
 
-- **Deshacer** (`Ctrl + Z`) vuelve atrás la última limpieza o la última región quitada, hasta 15 pasos (menos en páginas muy grandes, para no llenar la memoria).
+- **Deshacer** (`Ctrl + Z`) vuelve atrás la última limpieza o la última región quitada, hasta 15 pasos (menos en páginas muy grandes, para no llenar la memoria). Los trazos del pincel no se deshacen: se corrigen con **Añadir máscara** o **Borrar máscara**.
 - **Quitar** (`Supr`) borra la región elegida y también su limpieza del resultado; **Quitar todo** borra todas las regiones. Ambos se pueden deshacer.
 - Puedes volver a limpiar una región con otro método: el resultado se recalcula siempre desde la página original, así que las limpiezas no se acumulan ni se degradan.
 

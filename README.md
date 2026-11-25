@@ -1,6 +1,6 @@
 # PanelClean
 
-Aplicación de escritorio para limpiar el texto de los globos de manga: separa las letras del dibujo, reconoce el tipo de fondo que hay detrás y elige cómo reconstruirlo. Antes de guardar se puede revisar, corregir y deshacer todo.
+Aplicación de escritorio para limpiar el texto de los globos de manga: separa las letras del dibujo, reconoce el tipo de fondo que hay detrás y elige cómo reconstruirlo. Antes de guardar se puede revisar y corregir todo, y deshacer las limpiezas.
 
 Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026) · versión 0.3.1-beta.
 
@@ -14,7 +14,7 @@ Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026) · v
 1. Descarga el repositorio (`git clone` o «Code → Download ZIP» en GitHub y descomprime todo el ZIP).
 2. Debes tener Python 3.10 o superior instalado. Al instalarlo desde python.org, marca «Add Python to PATH».
 3. Haz doble clic en `INICIAR_WINDOWS.bat`.
-4. La primera ejecución instala automáticamente las dependencias y puede tardar un poco más. Si la instalación se corta, al volver a abrir el archivo se reintenta sola.
+4. La primera ejecución instala automáticamente las dependencias: tarda entre 15 segundos y un par de minutos, según el equipo y la conexión. Si la instalación se corta, al volver a abrir el archivo se reintenta sola.
 
 Para instalar sin abrir la aplicación: `INICIAR_WINDOWS.bat --instalar` (en Linux, `./INICIAR_LINUX.sh --instalar`).
 
@@ -29,7 +29,7 @@ chmod +x INICIAR_LINUX.sh
 
 En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
-**Sin probar.** PanelClean se desarrolló y se probó solo en Windows. El lanzador de Linux está incluido y las bibliotecas que usa existen para Linux, pero el equipo no tuvo un computador donde ejecutarlo.
+**Sin probar.** PanelClean se desarrolló y se probó solo en Windows 10 y 11. El lanzador de Linux está incluido y las bibliotecas que usa existen para Linux, pero el equipo no tuvo un computador donde ejecutarlo.
 
 ## Uso básico
 
