@@ -28,9 +28,9 @@ bash INICIAR_LINUX.sh
 
 El doble clic no funciona en todos los escritorios; este comando, sí.
 
-En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
+En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`; en Fedora, `python3-tkinter`.
 
-**Sin probar.** PanelClean se desarrolló y se probó solo en Windows 10 y 11. El lanzador de Linux está incluido y las bibliotecas que usa existen para Linux, pero el equipo no tuvo un computador donde ejecutarlo.
+Se probó en Fedora el 25/11/2026. En otras distribuciones no se probó.
 
 ## Uso básico
 

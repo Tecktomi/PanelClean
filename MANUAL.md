@@ -25,7 +25,7 @@ Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026).
 
 | | |
 |---|---|
-| Sistema | Windows 10 u 11, probado desde un Pentium con 4 GB de RAM. Linux: incluido, sin probar |
+| Sistema | Windows 10 u 11, probado desde un Pentium con 4 GB de RAM, o Linux, probado en Fedora |
 | Python | 3.10 o superior |
 | Pantalla | 1366 × 768 o más |
 | Espacio | Unos 50 MB la carpeta del proyecto y unos 200 MB más al instalar |
@@ -48,10 +48,11 @@ Si ves esta ventana, PanelClean quedó instalado. Empieza sin ninguna página ab
 
 ### Linux
 
-En Debian o Ubuntu, instala primero Python, su módulo de entornos virtuales y Tkinter:
+Instala primero Python, su módulo de entornos virtuales y Tkinter:
 
 ```bash
-sudo apt install python3 python3-venv python3-tk
+sudo apt install python3 python3-venv python3-tk    # Debian o Ubuntu
+sudo dnf install python3 python3-tkinter            # Fedora
 ```
 
 Luego descomprime todo el ZIP y, en una terminal dentro de la carpeta del proyecto:
@@ -60,7 +61,7 @@ Luego descomprime todo el ZIP y, en una terminal dentro de la carpeta del proyec
 bash INICIAR_LINUX.sh
 ```
 
-El lanzador avisa si falta algo y dice cómo instalarlo. **Sin probar:** PanelClean se probó solo en Windows 10 y 11; el equipo no tuvo un computador con Linux. Si falla, avísanos con el mensaje que muestre.
+El lanzador avisa si falta algo y dice cómo instalarlo. Se probó en Fedora; en otras distribuciones, no.
 
 ### Opciones
 
@@ -311,7 +312,7 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 | «No se pudieron instalar las dependencias» | Revisa la conexión a Internet y vuelve a abrir el lanzador: la instalación se reintenta sola |
 | «Para leer PDF falta la biblioteca pypdfium2» | Cierra PanelClean y ábrelo con el lanzador, con internet: la instala solo |
 | Linux: el doble clic no abre el lanzador | En una terminal, en su carpeta: `bash INICIAR_LINUX.sh` |
-| Linux: «Falta Tkinter» | `sudo apt install python3-tk python3-venv` |
+| Linux: «Falta Tkinter» | Escribe el comando que muestra el lanzador para tu distribución |
 | `ModuleNotFoundError: No module named 'PIL'` (o `cv2`) al correr un `.py` | Se usó el Python del sistema. Abre PanelClean con el lanzador, o usa `.venv\Scripts\python` (Linux: `.venv/bin/python`) |
 | Una región no se limpia | Está en «Complejo / revisar» o «Revisar máscara», o su máscara quedó vacía. Revisa el rosa, corrígelo o elige un método a mano |
 | Al arrastrar no se crea un rectángulo | La herramienta activa es un pincel. Pulsa `Esc` o elige **Seleccionar** |

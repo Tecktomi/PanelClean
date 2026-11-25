@@ -18,6 +18,7 @@ fi
 if ! python3 -c "import tkinter" >/dev/null 2>&1; then
   echo "[PanelClean] Falta Tkinter."
   echo "Debian/Ubuntu: sudo apt install python3-tk python3-venv"
+  echo "Fedora: sudo dnf install python3-tkinter"
   echo "Arch: sudo pacman -S tk python"
   exit 1
 fi

@@ -16,5 +16,5 @@ if _FALTAN:
         '  Linux:   .venv/bin/python -m evaluacion.etiquetar --nombre TuNombre\n'
         'Para etiquetar en Windows basta con hacer doble clic en ETIQUETAR_WINDOWS.bat.\n'
         'Si la carpeta .venv no existe, ejecuta antes INICIAR_WINDOWS.bat '
-        '(o ./INICIAR_LINUX.sh).'
+        '(o bash INICIAR_LINUX.sh).'
     )
