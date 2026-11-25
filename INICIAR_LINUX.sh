@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Uso: ./INICIAR_LINUX.sh              instala lo necesario y abre PanelClean
-#      ./INICIAR_LINUX.sh --instalar   solo instala (no abre la aplicación)
+# Uso, en una terminal:
+#   bash INICIAR_LINUX.sh              instala lo necesario y abre PanelClean
+#   bash INICIAR_LINUX.sh --instalar   solo instala (no abre la aplicación)
 set -e
 cd "$(dirname "$0")"
 
@@ -32,15 +33,20 @@ if [ ! -x ".venv/bin/python" ]; then
   fi
 fi
 
-# Instalar dependencias si la instalación anterior no terminó bien.
-# El archivo .venv/instalado.txt se crea solo cuando pip termina sin errores.
-if [ ! -f ".venv/instalado.txt" ]; then
+# Instalar dependencias si la instalación anterior no terminó bien o si
+# requirements.txt cambió (una versión nueva de PanelClean).
+# .venv/instalado.txt es una copia de lo último que pip instaló sin errores.
+if ! cmp -s requirements.txt .venv/instalado.txt; then
   echo "[PanelClean] Instalando dependencias, puede tardar unos minutos..."
-  if ! .venv/bin/python -m pip install -r requirements.txt; then
+  if .venv/bin/python -m pip install -r requirements.txt; then
+    cp requirements.txt .venv/instalado.txt
+  elif [ -f ".venv/instalado.txt" ]; then
+    # Si ya había una instalación, sigue sirviendo: solo faltará lo nuevo.
+    echo "[PanelClean] No se pudo instalar lo nuevo (revisa tu conexión). Se usa la instalación anterior: puede faltar abrir PDF."
+  else
     echo "[PanelClean] No se pudieron instalar las dependencias. Revisa tu conexión y vuelve a intentarlo."
     exit 1
   fi
-  echo ok > .venv/instalado.txt
 fi
 
 if [ "${1:-}" = "--instalar" ]; then

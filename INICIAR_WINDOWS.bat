@@ -25,15 +25,26 @@ if not exist ".venv\Scripts\python.exe" (
     if errorlevel 1 goto :venv_error
 )
 
-rem 3) Instalar dependencias si la instalacion anterior no termino bien.
-rem    El archivo .venv\instalado.txt se crea solo cuando pip termina sin errores.
-if not exist ".venv\instalado.txt" (
-    echo [PanelClean] Instalando dependencias, puede tardar unos minutos...
-    ".venv\Scripts\python.exe" -m pip install -r requirements.txt
-    if errorlevel 1 goto :deps_error
-    echo ok> ".venv\instalado.txt"
-)
+rem 3) Instalar dependencias si la instalacion anterior no termino bien o si
+rem    requirements.txt cambio (una version nueva de PanelClean).
+rem    .venv\instalado.txt es una copia de lo ultimo que pip instalo sin errores.
+fc requirements.txt ".venv\instalado.txt" >nul 2>nul
+if not errorlevel 1 goto :instalado
+echo [PanelClean] Instalando dependencias, puede tardar unos minutos...
+".venv\Scripts\python.exe" -m pip install -r requirements.txt
+if errorlevel 1 goto :deps_fallo
+copy /y requirements.txt ".venv\instalado.txt" >nul
+goto :instalado
 
+:deps_fallo
+rem Si ya habia una instalacion, sigue sirviendo: solo faltara lo nuevo.
+if not exist ".venv\instalado.txt" goto :deps_error
+echo.
+echo [PanelClean] No se pudo instalar lo nuevo (revisa tu conexion a Internet).
+echo Se usa la instalacion anterior: puede faltar abrir PDF.
+echo.
+
+:instalado
 if /i "%~1"=="--instalar" (
     echo [PanelClean] Instalacion lista.
     exit /b 0
