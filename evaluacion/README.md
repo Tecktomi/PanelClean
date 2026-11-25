@@ -1,6 +1,6 @@
 # Evaluación de PanelClean
 
-Mide, de forma reproducible, las metas comprometidas en el Hito 1 (presentación, diapositiva 7 y respaldo B). Los resultados más recientes están en [`resultados/resumen.md`](resultados/resumen.md).
+Mide, de forma reproducible, las metas comprometidas en el Hito 1 (presentación, diapositiva 7 y respaldo B; la de limpieza, en la sección 7.1 del documento). Los resultados más recientes están en [`resultados/resumen.md`](resultados/resumen.md).
 
 ## Cómo correrla
 
@@ -20,10 +20,10 @@ Tarda unos 10 minutos en un portátil, porque vuelve a medir los candidatos de O
 | 1 | Detección: precisión, recall, F1 | T1.2.3, T1.2.6 | OpenMantra, 214 páginas; series propias marcadas a mano | Criterio actual: una región acierta un texto si su centro cae en la caja anotada y no mide más de 3 veces esa caja. Se informa también el criterio original (cubrir el 80 % de la caja), el detector anterior (`detect_bubbles`) con los dos, cuánto dibujo borraría el modo automático, y qué pasa con escaneos distintos y con los clics del usuario | F1 ≥ 0,85 |
 | 2 | Máscara: IoU, Dice, cobertura, exceso | T1.4.2 | 150 pares sintéticos | Contra los píxeles que el texto cambió respecto del fondo limpio, con los ajustes por defecto de la aplicación | IoU ≥ 0,80 |
 | 3 | Selector: exactitud, macro-F1, matriz de confusión | T2.4.4 | Sintéticos (clase por construcción) y regiones reales etiquetadas | Regla de entropía, tono oscuro y textura (`classify_background`), sin el aviso «Revisar máscara». En reales se informa la validación cruzada por obra | Macro-F1 ≥ 0,80 |
-| 4 | Limpieza: MAE, PSNR, SSIM | T2.4.1 | Sintéticos | Salida vs. fondo limpio, en gris, dentro de la selección | Sin meta |
+| 4 | Limpieza: MAE, PSNR, SSIM | T2.4.1 | Sintéticos | Salida vs. fondo limpio, en gris, dentro de la selección | La de la fila 7 |
 | 5 | Conservación | T2.4.2 | Sintéticos | Píxeles cambiados fuera de la máscara; además, fondo sano alterado dentro de ella | 0 píxeles |
 | 6 | Rendimiento | T2.4.3 | 20 páginas de OpenMantra ampliadas a 2048 px | Tiempo de detectar, crear máscaras y limpiar en automático | ≤ 15 s/página |
-| 7 | Hipótesis: adaptativo vs. método único | T2.4.5 | Sintéticos | Diferencia pareada con el mejor método único, IC 95 % por bootstrap, en MAE, PSNR y SSIM | Adaptativo mejor |
+| 7 | Hipótesis: adaptativo vs. método único | T2.4.5 | Sintéticos | Diferencia pareada con el mejor método único, IC 95 % por bootstrap, en MAE, PSNR y SSIM | Mejorar al menos una métrica sin empeorar las demás de forma significativa |
 | 8 | «Ajustar al texto»: letras cubiertas y dibujo borrado | T1.2.3 | OpenMantra, 120 zonas por obra | Zonas holgadas alrededor de cada texto (caja anotada + 10–70 % de su lado corto por lado). Se compara usar la zona tal cual con buscar el texto dentro de ella: qué parte de las letras cubre la máscara y cuántos píxeles borra fuera de las cajas anotadas | Sin meta |
 
 ## Datos
@@ -43,7 +43,7 @@ Son 50 pares por clase, siempre los mismos (semilla 2026). Las frases salen de l
 ## Decisiones de diseño
 
 - **Máscara del sistema y máscara perfecta.** La limpieza se mide dos veces. Con la máscara perfecta se aísla la elección del método; con la del sistema se ve lo que obtiene el usuario.
-- **Tres métricas para la hipótesis.** El MAE favorece por construcción el relleno con la mediana (la mediana minimiza el error absoluto) aunque borre la textura; el SSIM sí mide si la textura se conserva.
+- **Tres métricas para la hipótesis.** El MAE favorece por construcción el relleno con la mediana (la mediana minimiza el error absoluto) aunque borre la textura; el SSIM sí mide si la textura se conserva. El Hito 1 pedía mejorar al menos una sin degradación significativa del resto; aquí una diferencia es significativa si su intervalo del 95 % no incluye el 0.
 - **Adaptativo comparable en todos los pares.** La aplicación deja los fondos complejos para revisión manual. Para comparar en los mismos pares, el adaptativo usa Relleno local si el fondo se clasifica como Uniforme y Telea en otro caso. Aparte se informa cuántos pares deja la aplicación para revisión.
 - **Piso y techo.** *Sin limpiar* es el piso; el *oráculo por par* (el mejor método único en cada par) es el techo de cualquier selector.
 - **Selector calibrado sin la obra reservada.** La regla mide el fondo en una franja de hasta 14 px alrededor de las letras: la *entropía* del histograma separa el papel liso del resto, y el *tono oscuro* (percentil 10) separa el dibujo, que tiene tinta casi negra, de la trama o el degradado, que no la tienen. Una tercera medida, la *textura repartida* (fracción de la franja que varía en ventanas de 7 × 7 px), evita confundir con papel una trama rala que cubre toda la franja. Los umbrales se calculan con `calibrar_selector.py` a partir de pares sintéticos de desarrollo (semilla 7) y de las regiones reales etiquetadas, sin la obra de prueba. Como las regiones reales sirven para ajustar y para medir, el valor que cuenta es la validación cruzada por obra: se ajusta sin una obra y se mide en ella. La varianza y la densidad de bordes de la regla anterior se descartaron porque en manga real las tramas son finas y de poco contraste: la regla las tomaba por papel liso y, en los sintéticos, tomaba las tramas por dibujo. Con las etiquetas sumadas el 23/11 la calibración propone otros umbrales (2,5 bits y tono 80), pero **no se adoptaron**: en los sintéticos de desarrollo bajan el macro-F1 de 0,92 a 0,77, y su ventaja en las reales (0,67 → 0,82, optimista) depende de 5 regiones estructuradas; en la validación cruzada el macro-F1 sigue en 0,62.

@@ -267,6 +267,11 @@ CRITERIOS = (
 )
 
 
+def meta_limpieza(veredictos: dict[str, str]) -> bool:
+    """Meta de limpieza del Hito 1: mejorar alguna métrica sin empeorar otra."""
+    return 'mejor' in veredictos.values() and 'peor' not in veredictos.values()
+
+
 def resumen_limpieza(filas: list[dict]) -> tuple[str, dict]:
     """Secciones de limpieza, hipótesis y conservación. Devuelve (texto, datos clave)."""
     datos = {}
@@ -276,7 +281,10 @@ def resumen_limpieza(filas: list[dict]) -> tuple[str, dict]:
         'selección. MAE en niveles de gris (0-255, menor es mejor); PSNR en dB y SSIM '
         '(mayor es mejor). Ojo: el MAE favorece por construcción el relleno con la mediana '
         '(la mediana es el valor que minimiza el error absoluto), aunque borre la textura; '
-        'el SSIM sí mide si la textura se conserva. Por eso la hipótesis se juzga con las tres.'
+        'el SSIM sí mide si la textura se conserva. Por eso la hipótesis se juzga con las '
+        'tres: el Hito 1 pedía mejorar al menos una sin empeorar las demás de forma '
+        'significativa. Una diferencia es significativa si su intervalo del 95 % no '
+        'incluye el 0.'
     )
     partes.append('')
     partes.append(
@@ -1486,7 +1494,6 @@ def main() -> None:
     def cumple(ok: bool) -> str:
         return 'Sí' if ok else 'No'
 
-    hip = clave.get('sistema', {})
     filas_meta = [
         [
             'Detección en OpenMantra (F1, criterio actual: centro y tamaño)',
@@ -1539,7 +1546,18 @@ def main() -> None:
             f'{num(zonas["dibujo_zona"], 0)} px → {num(zonas["dibujo_ajuste"], 0)} px',
             '—',
         ],
-        ['Reconstrucción (MAE/PSNR/SSIM)', 'sin meta', 'ver sección 3', '—'],
+        *[
+            [
+                f'Limpieza: adaptativo vs. mejor método único ({mascara})',
+                'mejorar al menos una métrica sin empeorar las demás',
+                ' · '.join(f'{k}: {v}' for k, v in clave.get(tipo, {}).items()),
+                cumple(meta_limpieza(clave[tipo])) if tipo in clave else '—',
+            ]
+            for tipo, mascara in (
+                ('perfecta', 'máscara perfecta'),
+                ('sistema', 'máscara del sistema'),
+            )
+        ],
         [
             'Conservación (píxeles fuera de la máscara)',
             '0',
@@ -1551,18 +1569,6 @@ def main() -> None:
             '≤ 15 s',
             f'{num(t_max)} s',
             cumple(t_max <= META_TIEMPO),
-        ],
-        [
-            'Hipótesis: adaptativo vs. mejor método único (máscara perfecta)',
-            'adaptativo mejor',
-            ' · '.join(f'{k}: {v}' for k, v in clave.get('perfecta', {}).items()),
-            '—',
-        ],
-        [
-            'Hipótesis: adaptativo vs. mejor método único (máscara del sistema)',
-            'adaptativo mejor',
-            ' · '.join(f'{k}: {v}' for k, v in hip.items()),
-            '—',
         ],
     ]
     encabezado = [

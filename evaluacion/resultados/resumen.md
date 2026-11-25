@@ -16,11 +16,10 @@ Los intervalos entre corchetes son de confianza del 95 % (bootstrap). Los datos 
 | Selector (macro-F1, regiones reales, validación cruzada por obra) | ≥ 0,80 | 0,62 | No |
 | «Ajustar al texto»: zonas con ≥ 95 % de las letras cubiertas (rectángulo tal cual → ajustado) | sin meta | 77 % → 94 % | — |
 | «Ajustar al texto»: dibujo borrado por zona (rectángulo tal cual → ajustado) | sin meta | 272 px → 45 px | — |
-| Reconstrucción (MAE/PSNR/SSIM) | sin meta | ver sección 3 | — |
+| Limpieza: adaptativo vs. mejor método único (máscara perfecta) | mejorar al menos una métrica sin empeorar las demás | MAE: peor · PSNR: mejor · SSIM: peor | No |
+| Limpieza: adaptativo vs. mejor método único (máscara del sistema) | mejorar al menos una métrica sin empeorar las demás | MAE: sin diferencia significativa · PSNR: mejor · SSIM: sin diferencia significativa | Sí |
 | Conservación (píxeles fuera de la máscara) | 0 | 0 | Sí |
 | Rendimiento (máximo por página de 2048 px) | ≤ 15 s | 0,65 s | Sí |
-| Hipótesis: adaptativo vs. mejor método único (máscara perfecta) | adaptativo mejor | MAE: peor · PSNR: mejor · SSIM: peor | — |
-| Hipótesis: adaptativo vs. mejor método único (máscara del sistema) | adaptativo mejor | MAE: sin diferencia significativa · PSNR: mejor · SSIM: sin diferencia significativa | — |
 
 ## 1. Máscara de texto (pares sintéticos)
 
@@ -49,7 +48,7 @@ Exactitud: **0,87** · Macro-F1: **0,86** · Regiones con aviso «Revisar másca
 
 ## 3. Limpieza e hipótesis central (pares sintéticos)
 
-Se comparan la salida y el fondo limpio en escala de grises, dentro de la selección. MAE en niveles de gris (0-255, menor es mejor); PSNR en dB y SSIM (mayor es mejor). Ojo: el MAE favorece por construcción el relleno con la mediana (la mediana es el valor que minimiza el error absoluto), aunque borre la textura; el SSIM sí mide si la textura se conserva. Por eso la hipótesis se juzga con las tres.
+Se comparan la salida y el fondo limpio en escala de grises, dentro de la selección. MAE en niveles de gris (0-255, menor es mejor); PSNR en dB y SSIM (mayor es mejor). Ojo: el MAE favorece por construcción el relleno con la mediana (la mediana es el valor que minimiza el error absoluto), aunque borre la textura; el SSIM sí mide si la textura se conserva. Por eso la hipótesis se juzga con las tres: el Hito 1 pedía mejorar al menos una sin empeorar las demás de forma significativa. Una diferencia es significativa si su intervalo del 95 % no incluye el 0.
 
 Estrategias: los tres métodos únicos; el **adaptativo (selector actual)**, que usa Relleno local si la regla clasifica el fondo como Uniforme y Telea en otro caso; el **adaptativo (clase real)**, igual pero con la clase verdadera del fondo (lo que lograría un clasificador perfecto), y el **oráculo por par**, que elige el mejor método único de cada par según el MAE (techo). Todas se miden en los mismos pares.
 

@@ -306,6 +306,15 @@ class EvaluacionTest(unittest.TestCase):
         texto, datos = E.resumen_limpieza(limpieza)
         self.assertIn('Hipótesis', texto)
         self.assertEqual(set(datos['perfecta']), {'MAE', 'PSNR', 'SSIM'})
+        # Meta de limpieza: alguna métrica mejora y ninguna empeora.
+        igual = 'sin diferencia significativa'
+        for mae, psnr, cumple in (
+            (igual, 'mejor', True),
+            ('peor', 'mejor', False),
+            (igual, igual, False),
+        ):
+            veredictos = {'MAE': mae, 'PSNR': psnr, 'SSIM': igual}
+            self.assertEqual(E.meta_limpieza(veredictos), cumple, veredictos)
 
 
 class MuestreoTest(unittest.TestCase):
