@@ -11,12 +11,12 @@ from functools import lru_cache
 from pathlib import Path
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__
+from . import __version__, pdf
 from .vision import (
     Region,
     Options,
@@ -299,8 +299,13 @@ class Hoja:
 
     @property
     def nombre(self) -> str:
-        """Nombre del archivo de la página."""
+        """Nombre del archivo de la página («tomo_01.pdf#003» si es de un PDF)."""
         return Path(self.ruta).name
+
+    @property
+    def nombre_limpia(self) -> str:
+        """Nombre, sin extensión, con que se exporta la página limpia."""
+        return f'{pdf.nombre_base(self.ruta)}_limpia'
 
     @property
     def estado(self) -> str:
@@ -314,7 +319,12 @@ class Hoja:
 
 
 COLOR_ESTADO = {'Lista': 'accent', 'Revisar': 'warn', 'Pendiente': 'muted'}
-TIPOS_IMAGEN = [('Imágenes', '*.png *.jpg *.jpeg *.bmp *.webp'), ('Todos', '*.*')]
+TIPOS_IMAGEN = [
+    ('Imágenes y PDF', '*.png *.jpg *.jpeg *.bmp *.webp *.pdf'),
+    ('Todos', '*.*'),
+]
+PAGINAS_PDF = 20  # páginas de un PDF que se proponen abrir
+MEMORIA_AVISO = 1000  # MB: desde aquí se avisa antes de abrir las páginas de un PDF
 
 
 class PanelCleanApp:
@@ -1116,12 +1126,14 @@ class PanelCleanApp:
 
         Reemplazan a las hojas abiertas o, con agregar=True, se suman al final de la
         cola. Antes de reemplazar, avisa si hay limpiezas sin exportar; con una sola
-        página de más de 3500 px de lado, pregunta antes de abrirla. Las que no se
-        pueden leer se informan y se omiten. Devuelve cuántas hojas se abrieron.
+        página de más de 3500 px de lado, pregunta antes de abrirla. De un PDF se
+        pregunta qué páginas abrir. Las que no se pueden leer se informan y se omiten.
+        Devuelve cuántas hojas se abrieron.
         """
         if self._procesando or (not agregar and not self._descartar_cambios()):
             return 0
-        nuevas, fallidas = [], []
+        rutas, fallidas = self._separar_pdf(rutas)
+        nuevas = []
         for k, ruta in enumerate(rutas):
             if len(rutas) > 2:
                 self._set_status(f'Abriendo hojas: {k + 1} de {len(rutas)}…')
@@ -1166,6 +1178,56 @@ class PanelCleanApp:
                 'Encierra el texto de cada una o pulsa «Procesar todas».'
             )
         return len(nuevas)
+
+    def _separar_pdf(self, rutas):
+        """Cambia cada PDF de la lista por las páginas que se quieren abrir.
+        Devuelve (rutas, PDF que no se pudieron leer)."""
+        salida, fallidas = [], []
+        for ruta in rutas:
+            if not pdf.es_pdf(ruta):
+                salida.append(ruta)
+                continue
+            try:
+                paginas = pdf.paginas(ruta)
+                salida += self._elegir_paginas(Path(ruta).name, paginas)
+            except Exception as exc:
+                fallidas.append(f'{Path(ruta).name}: {exc}')
+        return salida, fallidas
+
+    def _elegir_paginas(self, nombre, paginas):
+        """Pregunta qué páginas abrir de un PDF de varias (todas, si tiene una sola).
+        Avisa si van a ocupar mucha memoria. Si se cancela, ninguna."""
+        if len(paginas) < 2:
+            return paginas
+        texto, error = f'1-{min(PAGINAS_PDF, len(paginas))}', ''
+        while True:
+            texto = simpledialog.askstring(
+                'Abrir PDF',
+                f'{error}«{nombre}» tiene {len(paginas)} páginas. ¿Cuáles abrir?\n\n'
+                'Por ejemplo: 1-20 o 3, 8, 12-15. Conviene abrir pocas a la vez:\n'
+                'todas las hojas abiertas ocupan memoria.',
+                initialvalue=texto,
+                parent=self.root,
+            )
+            if texto is None:
+                return []
+            try:
+                elegidas = [paginas[n - 1] for n in pdf.elegir(texto, len(paginas))]
+                break
+            except ValueError as exc:
+                error = f'{exc}\n\n'
+        # Cada hoja guarda la página original y la limpia. Se calcula con la página del
+        # medio, porque la portada suele ser más grande que las demás.
+        muestra = bgr_from_file(str(elegidas[len(elegidas) // 2]))
+        mb = 2 * len(elegidas) * muestra.nbytes / 1e6
+        if mb > MEMORIA_AVISO and not messagebox.askyesno(
+            'Muchas páginas',
+            f'Las {len(elegidas)} páginas van a ocupar cerca de '
+            f'{f"{mb / 1000:.1f}".replace(".", ",")} GB de memoria. '
+            '¿Abrirlas de todas formas?',
+        ):
+            return []
+        return elegidas
 
     def _descartar_cambios(self):
         """Antes de cerrar las hojas abiertas: si alguna tiene limpiezas sin exportar,
@@ -1950,7 +2012,7 @@ class PanelCleanApp:
         destinos, usados = [], set()
         for hoja in con_limpieza:
             # Dos hojas con el mismo nombre (de carpetas distintas) no se pisan.
-            base = nombre = f'{Path(hoja.ruta).stem}_limpia'
+            base = nombre = hoja.nombre_limpia
             numero = 2
             while nombre.lower() in usados:
                 nombre = f'{base}_{numero}'
@@ -1991,7 +2053,7 @@ class PanelCleanApp:
         hoja = self.hojas[self.actual]
         dest = filedialog.asksaveasfilename(
             defaultextension='.png',
-            initialfile=f'{Path(hoja.ruta).stem}_limpia.png',
+            initialfile=f'{hoja.nombre_limpia}.png',
             filetypes=[('Imagen PNG', '*.png')],
             title='Exportar página limpia',
         )

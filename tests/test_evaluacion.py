@@ -14,6 +14,7 @@ from unittest import mock
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from evaluacion import cajas as K
 from evaluacion import calibrar_selector as C
@@ -24,6 +25,13 @@ from evaluacion import metricas as M
 from evaluacion import muestreo
 from evaluacion import sinteticos as S
 from panelclean import vision as V
+
+try:
+    import pypdfium2  # noqa: F401
+except ImportError:
+    pypdfium2 = None
+
+DEMO = Path(V.__file__).parent.parent / 'examples' / 'demo_pagina.png'
 
 
 class MascaraTest(unittest.TestCase):
@@ -509,9 +517,8 @@ class MarcarTest(unittest.TestCase):
         base = Path(self.tmp.name)
         self.carpeta = base / 'mi_manga'
         self.carpeta.mkdir()
-        demo = Path(V.__file__).parent.parent / 'examples' / 'demo_pagina.png'
         for nombre in ('001.png', '002.png'):
-            shutil.copy(demo, self.carpeta / nombre)
+            shutil.copy(DEMO, self.carpeta / nombre)
         for nombre, valor in (
             ('CAJAS', base / 'cajas_texto.json'),
             ('LOCALES', base / 'carpetas_locales.json'),
@@ -620,6 +627,49 @@ class MarcarTest(unittest.TestCase):
         ventana.pagina_lista()
         ventana.cambiar_pagina(1)
         self.assertFalse(K.CAJAS.exists(), 'no guarda una serie vacía')
+
+    def crear_pdf(self, destino, paginas=2):
+        """PDF con la página de ejemplo repetida, como un manga escaneado."""
+        imagen = Image.open(self.carpeta / '001.png').convert('RGB')
+        imagen.save(destino, save_all=True, append_images=[imagen] * (paginas - 1))
+        return destino
+
+    @unittest.skipUnless(pypdfium2, 'pypdfium2 no está instalado')
+    def test_una_carpeta_con_pdf_muestra_todas_sus_paginas(self):
+        self.crear_pdf(self.carpeta / 'tomo 2.PDF')
+        (self.carpeta / 'roto.pdf').write_bytes(b'nada')
+        with mock.patch.object(marcar.messagebox, 'showwarning') as aviso:
+            ventana = self.abrir()
+        self.assertEqual(
+            [p.name for p in ventana.paginas],
+            ['001.png', '002.png', 'tomo 2.PDF#001', 'tomo 2.PDF#002'],
+        )
+        self.assertIn('roto.pdf', aviso.call_args.args[1])
+        with mock.patch.object(marcar.simpledialog, 'askinteger', return_value=3):
+            ventana.ir_a_pagina()
+        self.assertEqual(ventana.imagen.shape, V.bgr_from_file(str(DEMO)).shape)
+        self.assertTrue(ventana.cajas, 'el detector propone también en un PDF')
+        ventana.pagina_lista()
+        self.assertEqual(ventana.indice, 3, 'pasa a la siguiente página del PDF')
+        with mock.patch.object(D, 'PROPIOS', Path(self.tmp.name) / 'propios.csv'):
+            filas = D.medir_propias(avance=lambda _: None)
+        self.assertEqual({f['pagina'] for f in filas}, {'tomo 2.PDF#001'})
+
+    @unittest.skipUnless(pypdfium2, 'pypdfium2 no está instalado')
+    def test_un_pdf_suelto_es_una_serie(self):
+        # En una carpeta con otras cosas: solo cuentan las páginas de ese PDF.
+        tomo = self.crear_pdf(self.carpeta / 'Otra serie.pdf', 3)
+        ventana = marcar.Marcador(self.root, tomo, 'Prueba')
+        self.assertEqual((ventana.grupo, len(ventana.paginas)), ('Otra serie', 3))
+        ventana.pagina_lista()
+        self.assertEqual(set(K.leer()['Otra serie']['paginas']), {'Otra serie.pdf#001'})
+        self.assertNotIn(str(self.carpeta), K.CAJAS.read_text(encoding='utf8'))
+        propios = Path(self.tmp.name) / 'propios.csv'
+        with mock.patch.object(D, 'PROPIOS', propios):
+            filas = D.medir_propias(avance=lambda _: None)
+            self.assertEqual({f['pagina'] for f in filas}, {'Otra serie.pdf#001'})
+            tomo.unlink()  # sin el PDF se usan las medidas guardadas
+            self.assertEqual(D.medir_propias(avance=lambda _: None), filas)
 
     def test_dos_carpetas_con_el_mismo_nombre_son_dos_series(self):
         otra = Path(self.tmp.name) / 'otra' / 'mi_manga'

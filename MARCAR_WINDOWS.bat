@@ -5,12 +5,13 @@ title PanelClean - Marcar texto
 
 rem Abre el programa para marcar donde hay texto en paginas propias. Con eso se le
 rem ensena al detector otros estilos e idiomas, y se mide como le va en ellos.
-rem Uso: doble clic (pide la carpeta y el nombre), o arrastra encima de este archivo
-rem      la carpeta con las paginas de UNA serie.
+rem Uso: doble clic (pide las paginas y el nombre), o arrastra encima de este archivo
+rem      un PDF o la carpeta con las paginas de UNA serie (imagenes o PDF).
 rem Las cajas se guardan en evaluacion\cajas_texto.json; las imagenes no se copian.
 
 rem 1) Preparar el entorno si todavia no existe (lo mismo que INICIAR_WINDOWS.bat).
-if not exist ".venv\instalado.txt" (
+fc requirements.txt ".venv\instalado.txt" >nul 2>nul
+if errorlevel 1 (
     call INICIAR_WINDOWS.bat --instalar
     if errorlevel 1 exit /b 1
 )

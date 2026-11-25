@@ -235,8 +235,8 @@ def medir_propias(avance=print) -> list[dict]:
             continue
         n = 0
         for archivo, pagina in sorted(paginas.items()):
-            ruta = carpeta / archivo
-            if not ruta.exists():
+            ruta = K.ruta_de(carpeta, archivo)
+            if ruta is None:
                 continue
             nuevas = medir_pagina(
                 V.bgr_from_file(str(ruta)),

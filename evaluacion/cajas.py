@@ -3,14 +3,16 @@
 Se guardan en dos archivos:
 - cajas_texto.json: por serie y por página, los rectángulos marcados. No incluye
   imágenes ni rutas del equipo, así que se puede compartir.
-- carpetas_locales.json: en qué carpeta de este equipo está cada serie. No se sube
-  al repositorio (está en .gitignore).
+- carpetas_locales.json: en qué carpeta (o en qué PDF) de este equipo está cada serie.
+  No se sube al repositorio (está en .gitignore).
 
 Formato de cajas_texto.json:
     {"mi_serie": {"reservada": false, "paginas": {"001.jpg": {
         "ancho": 1600, "alto": 2300, "completa": true, "etiquetador": "Ana",
         "cajas": [{"x": 10, "y": 20, "w": 80, "h": 120,
                    "tipo": "texto", "origen": "mano"}]}}}}
+Una página de un PDF se guarda con el nombre del archivo y su número:
+"tomo_01.pdf#003" (ver panelclean/pdf.py).
 
 tipo: 'texto' o 'ignorar' (onomatopeyas y otro texto que es parte del dibujo: no
 cuenta ni como texto ni como «no texto»). origen: 'mano' o 'propuesta' (la puso el
@@ -23,6 +25,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
+from panelclean import pdf
 
 CARPETA = Path(__file__).resolve().parent
 CAJAS = CARPETA / 'cajas_texto.json'
@@ -57,22 +61,45 @@ def guardar(series: dict) -> None:
     _escribir(CAJAS, series)
 
 
-def paginas_de(carpeta: Path) -> list[Path]:
-    """Imágenes de una carpeta, en orden."""
-    return sorted(p for p in carpeta.iterdir() if p.suffix.lower() in EXTENSIONES)
+def paginas_de(origen: Path, avisos: list[str] | None = None) -> list[Path]:
+    """Páginas de una serie, en orden: las imágenes y los PDF de una carpeta, o las
+    páginas de un solo PDF. Un PDF que no se puede leer se omite y se anota en avisos.
+    """
+    archivos = [origen] if origen.is_file() else sorted(origen.iterdir())
+    paginas = []
+    for archivo in archivos:
+        if archivo.suffix.lower() in EXTENSIONES:
+            paginas.append(archivo)
+        elif pdf.es_pdf(archivo):
+            try:
+                paginas += pdf.paginas(archivo)
+            except Exception as exc:
+                if avisos is not None:
+                    avisos.append(f'{archivo.name}: {exc}')
+    return paginas
+
+
+def ruta_de(origen: Path, pagina: str) -> Path | None:
+    """Ruta de una página de la serie que está en origen (carpeta o PDF), o None si
+    su archivo ya no está."""
+    ruta = (origen.parent if origen.is_file() else origen) / pagina
+    partes = pdf.separar(ruta)
+    return ruta if (partes[0] if partes else ruta).exists() else None
 
 
 def registrar_carpeta(carpeta: Path) -> str:
-    """Nombre de la serie que corresponde a la carpeta; recuerda dónde está.
+    """Nombre de la serie que corresponde a la carpeta o al PDF; recuerda dónde está.
 
-    Es el nombre de la carpeta; si ya lo usa otra carpeta, se le agrega un número.
+    Es el nombre de la carpeta (o del PDF, sin extensión); si ya lo usa otra serie, se
+    le agrega un número.
     """
     carpeta = carpeta.resolve()
     locales = _leer(LOCALES)
     for serie, ruta in locales.items():
         if Path(ruta) == carpeta:
             return serie
-    base = serie = carpeta.name or 'serie'
+    nombre = carpeta.stem if pdf.es_pdf(carpeta) else carpeta.name
+    base = serie = nombre or 'serie'
     numero = 2
     while serie in locales and Path(locales[serie]).exists():
         serie = f'{base} ({numero})'
@@ -83,7 +110,7 @@ def registrar_carpeta(carpeta: Path) -> str:
 
 
 def carpeta_de(serie: str) -> Path | None:
-    """Carpeta de este equipo con las imágenes de la serie, o None."""
+    """Carpeta (o PDF) de este equipo con las páginas de la serie, o None."""
     ruta = _leer(LOCALES).get(serie)
     return Path(ruta) if ruta and Path(ruta).exists() else None
 

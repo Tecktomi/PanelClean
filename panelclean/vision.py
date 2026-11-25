@@ -67,9 +67,15 @@ class Region:
 
 
 def bgr_from_file(path: str) -> np.ndarray:
-    """Lectura de imágenes con rutas que contengan tildes o eñes."""
+    """Lectura de imágenes con rutas que contengan tildes o eñes, y de páginas de un
+    PDF (ver pdf.py)."""
     from PIL import Image, ImageOps
 
+    from . import pdf
+
+    pagina = pdf.separar(path)
+    if pagina:
+        return pdf.leer(*pagina)
     with Image.open(path) as obj:
         rgb = np.asarray(ImageOps.exif_transpose(obj).convert('RGB'))
     return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)

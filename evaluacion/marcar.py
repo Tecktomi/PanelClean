@@ -1,9 +1,9 @@
 """Programa para marcar dónde hay texto en páginas propias (tarea T1.2.7).
 
 Sirve para enseñarle al detector otros estilos e idiomas y para medir cómo le va en
-ellos. Se abre una carpeta con las páginas de UNA serie y en cada página se marca un
-rectángulo por bloque de texto. El detector propone los que encuentra, para partir
-de ahí: se corrigen, se borran o se agregan.
+ellos. Se abre una carpeta con las páginas de UNA serie (imágenes o PDF), o un PDF, y
+en cada página se marca un rectángulo por bloque de texto. El detector propone los que
+encuentra, para partir de ahí: se corrigen, se borran o se agregan.
 
 Cómo marcar:
 - Un rectángulo por bloque de texto, ajustado a las letras (no al globo).
@@ -20,6 +20,7 @@ Las imágenes no se copian a ningún lado (ver cajas.py).
 Uso, desde la raíz del repositorio (o con MARCAR_WINDOWS.bat):
     .venv\\Scripts\\python -m evaluacion.marcar
     .venv\\Scripts\\python -m evaluacion.marcar "C:\\mis\\hojas" --nombre Ana
+    .venv\\Scripts\\python -m evaluacion.marcar "C:\\mis\\tomo_01.pdf" --nombre Ana
 """
 
 from __future__ import annotations
@@ -50,18 +51,20 @@ AYUDA = (
     'Ctrl + Z: deshacer\n'
     'Rueda: zoom · clic derecho: mover · 0: ajustar\n'
     'Enter: página lista y siguiente\n'
-    'Av Pág / Re Pág: cambiar de página'
+    'Av Pág / Re Pág: cambiar de página\n'
+    'G: ir a la página número…'
 )
 MINIMO = 6  # px de la imagen: lado mínimo de una caja
 
 
 class Marcador:
-    """Ventana para marcar las cajas de texto de las páginas de una carpeta."""
+    """Ventana para marcar las cajas de texto de las páginas de una carpeta o un PDF."""
 
     def __init__(self, root: tk.Tk, carpeta: Path, nombre: str):
         """Prepara la ventana y abre la primera página que no esté lista."""
         self.root, self.nombre = root, nombre
-        self.paginas = K.paginas_de(carpeta)
+        avisos: list[str] = []  # PDF que no se pudieron leer
+        self.paginas = K.paginas_de(carpeta, avisos)
         self.grupo = K.registrar_carpeta(carpeta)
         self.series = K.leer()
         self.serie = self.series.setdefault(
@@ -84,7 +87,11 @@ class Marcador:
             ]
             self.abrir(pendientes[0] if pendientes else 0)
         else:
-            self.estado.configure(text=f'No hay imágenes en {carpeta}.')
+            self.estado.configure(text=f'No hay páginas que abrir en {carpeta}.')
+        if avisos:
+            messagebox.showwarning(
+                'PDF que no se pudieron leer', '\n'.join(avisos), parent=root
+            )
 
     # --- ventana ----------------------------------------------------------------
     def _construir(self) -> None:
@@ -163,6 +170,8 @@ class Marcador:
             ('i', self.cambiar_tipo),
             ('I', self.cambiar_tipo),
             ('0', self.ajustar_vista),
+            ('g', self.ir_a_pagina),
+            ('G', self.ir_a_pagina),
             ('<Escape>', lambda: self.elegir(None)),
         ):
             self.root.bind(tecla, lambda _, a=accion: a())
@@ -268,6 +277,21 @@ class Marcador:
         if 0 <= destino < len(self.paginas):
             self._guardar_borrador()
             self.abrir(destino)
+
+    def ir_a_pagina(self) -> None:
+        """Pide un número de página y la abre (en un PDF puede haber cientos)."""
+        if not self.paginas:
+            return
+        numero = simpledialog.askinteger(
+            'Ir a una página',
+            f'Número de página (1 a {len(self.paginas)}):',
+            parent=self.root,
+            initialvalue=self.indice + 1,
+            minvalue=1,
+            maxvalue=len(self.paginas),
+        )
+        if numero and numero - 1 != self.indice:
+            self.cambiar_pagina(numero - 1 - self.indice)
 
     def cambiar_reservada(self) -> None:
         """Marca o desmarca la serie como reservada. Al reservarla, la página abierta
@@ -546,18 +570,34 @@ class Marcador:
         self.root.destroy()
 
 
+def pedir_origen(root: tk.Tk) -> str:
+    """Pide la carpeta o el PDF con las páginas de una serie ('' si se cancela)."""
+    es_pdf = messagebox.askyesnocancel(
+        'Marcar texto',
+        '¿Las páginas están en un solo archivo PDF?\n\n'
+        'Sí: elegir el PDF.\n'
+        'No: elegir la carpeta con las imágenes o los PDF de UNA serie.',
+        parent=root,
+    )
+    if es_pdf is None:
+        return ''
+    if es_pdf:
+        return filedialog.askopenfilename(
+            title='PDF con las páginas', filetypes=[('PDF', '*.pdf')]
+        )
+    return filedialog.askdirectory(title='Carpeta con las páginas de UNA serie')
+
+
 def main() -> None:
-    """Pide lo que falte (nombre y carpeta), abre la ventana y ofrece entrenar al cerrar."""
+    """Pide lo que falte (páginas y nombre), abre la ventana y ofrece entrenar al cerrar."""
     parser = argparse.ArgumentParser(description='Marcar texto en páginas propias.')
-    parser.add_argument('carpeta', nargs='?', help='páginas de UNA serie')
+    parser.add_argument('carpeta', nargs='?', help='carpeta o PDF de UNA serie')
     parser.add_argument('--nombre', help='quién marca')
     args = parser.parse_args()
     registrar_fuentes()
     root = tk.Tk()
     root.withdraw()
-    carpeta = args.carpeta or filedialog.askdirectory(
-        title='Carpeta con las páginas de UNA serie'
-    )
+    carpeta = args.carpeta or pedir_origen(root)
     if not carpeta:
         return
     nombre = args.nombre or simpledialog.askstring(
