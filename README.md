@@ -16,16 +16,17 @@ Proyecto del curso TEL-328 Procesamiento Digital de Imágenes (UTFSM, 2026) · v
 3. Haz doble clic en `INICIAR_WINDOWS.bat`.
 4. La primera ejecución instala automáticamente las dependencias: tarda entre 15 segundos y un par de minutos, según el equipo y la conexión. Si la instalación se corta, al volver a abrir el archivo se reintenta sola.
 
-Para instalar sin abrir la aplicación: `INICIAR_WINDOWS.bat --instalar` (en Linux, `./INICIAR_LINUX.sh --instalar`).
+Para instalar sin abrir la aplicación: `INICIAR_WINDOWS.bat --instalar` (en Linux, `bash INICIAR_LINUX.sh --instalar`).
 
 ## Ejecutar en Linux
 
-En una terminal, dentro de la carpeta del proyecto:
+Descomprime todo el ZIP y abre una terminal dentro de la carpeta del proyecto:
 
 ```bash
-chmod +x INICIAR_LINUX.sh
-./INICIAR_LINUX.sh
+bash INICIAR_LINUX.sh
 ```
+
+El doble clic no funciona en todos los escritorios; este comando, sí.
 
 En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
@@ -35,7 +36,7 @@ En Debian/Ubuntu se necesitan `python3`, `python3-venv` y `python3-tk`.
 
 El [manual](MANUAL.md) explica cada control, cómo corregir la máscara y qué hacer si algo falla. En resumen:
 
-1. `Agregar hojas` (o `Abrir hojas`) para cargar una o varias páginas, o `Ejemplo` para practicar con la imagen incluida.
+1. `Agregar hojas` (o `Abrir hojas`) para cargar una o varias páginas (imágenes o PDF), o `Ejemplo` para practicar con la imagen incluida.
 2. Pulsa `Detectar texto` para encontrar el texto de la página: lo dudoso queda en naranja y no se limpia solo. Para agregar un globo que falte, haz clic sobre él o enciérralo a grandes rasgos (con `Ajustar al texto` la región se ajusta sola a las letras).
 3. Pulsa `Crear máscaras` y revisa la zona marcada en rosa.
 4. Pulsa `Limpiar selección`.
@@ -53,8 +54,8 @@ La versión actual cubre el flujo completo. Todavía puede fallar con texto sobr
 | Ruta | Contenido |
 |---|---|
 | `INICIAR_WINDOWS.bat`, `INICIAR_LINUX.sh` | Lanzadores: instalan lo necesario la primera vez y abren la aplicación |
-| `main.py`, `requirements.txt` | Punto de entrada y dependencias (NumPy, OpenCV, Pillow) |
-| `panelclean/` | La aplicación: `vision.py` (detección de texto, máscara, clasificación del fondo y limpieza), `app.py` (interfaz) y `modelo_texto.yml` (el detector entrenado) |
+| `main.py`, `requirements.txt` | Punto de entrada y dependencias (NumPy, OpenCV, Pillow y pypdfium2, para abrir PDF) |
+| `panelclean/` | La aplicación: `vision.py` (detección de texto, máscara, clasificación del fondo y limpieza), `app.py` (interfaz), `pdf.py` (lectura de PDF) y `modelo_texto.yml` (el detector entrenado) |
 | `tests/` | Pruebas automáticas |
 | `evaluacion/` | Evaluación de las metas del Hito 1, con sus resultados en `evaluacion/resultados/` ([detalle](evaluacion/README.md)) |
 | `ETIQUETAR_WINDOWS.bat` | Abre la herramienta para etiquetar el fondo de regiones reales (la usa la evaluación) |

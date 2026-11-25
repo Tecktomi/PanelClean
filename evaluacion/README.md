@@ -82,11 +82,11 @@ Se abre una ventana con una región por vez. La pregunta es **qué hay detrás d
 El detector aprendió con OpenMantra, que es manga en japonés. Para enseñarle otros estilos o idiomas, y para saber de verdad cómo le va en ellos, se marca dónde está el texto en páginas propias:
 
 ```bash
-MARCAR_WINDOWS.bat                                   # Windows (o arrastrar encima la carpeta de una serie)
+MARCAR_WINDOWS.bat                                   # Windows (o arrastrar encima la carpeta o el PDF de una serie)
 .venv/bin/python -m evaluacion.marcar ruta/a/la/serie    # Linux
 ```
 
-- Una carpeta por serie. En cada página, un rectángulo por bloque de texto, ajustado a las letras. El detector propone los suyos para partir de ahí.
+- Una carpeta por serie, con imágenes, PDF o ambos; o un solo PDF. En cada página, un rectángulo por bloque de texto, ajustado a las letras. El detector propone los suyos para partir de ahí.
 - **Todo** el texto de la página: lo que queda sin marcar en una página lista se aprende como «no texto». Las onomatopeyas y letreros que son parte del dibujo se marcan como «ignorar» y no cuentan para ningún lado.
 - **Reservar al menos una serie** (casilla de la ventana) antes de marcarla: no se entrena con ella y no muestra propuestas, porque una referencia que parte de lo que encontró el detector lo favorece. Es la medida que vale para otros idiomas.
 - Conviene marcar pocas páginas de varias series antes que muchas de una sola.

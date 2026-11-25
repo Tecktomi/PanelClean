@@ -54,19 +54,18 @@ En Debian o Ubuntu, instala primero Python, su módulo de entornos virtuales y T
 sudo apt install python3 python3-venv python3-tk
 ```
 
-Luego, en una terminal, dentro de la carpeta del proyecto:
+Luego descomprime todo el ZIP y, en una terminal dentro de la carpeta del proyecto:
 
 ```bash
-chmod +x INICIAR_LINUX.sh
-./INICIAR_LINUX.sh
+bash INICIAR_LINUX.sh
 ```
 
 El lanzador avisa si falta algo y dice cómo instalarlo. **Sin probar:** PanelClean se probó solo en Windows 10 y 11; el equipo no tuvo un computador con Linux. Si falla, avísanos con el mensaje que muestre.
 
 ### Opciones
 
-- **Instalar sin abrir la aplicación:** `INICIAR_WINDOWS.bat --instalar` (en Linux, `./INICIAR_LINUX.sh --instalar`).
-- **Desinstalar:** borra la carpeta de PanelClean. No queda nada fuera de ella.
+- **Instalar sin abrir la aplicación:** `INICIAR_WINDOWS.bat --instalar` (en Linux, también con `--instalar`).
+- **Desinstalar:** borra la carpeta de PanelClean. No queda nada fuera de ella (en Linux, una copia de la fuente).
 
 ## 3. La ventana
 
@@ -93,7 +92,7 @@ Para practicar, usa **Ejemplo**: la página tiene un globo blanco, uno sobre una
 
 ### Paso 1 · Abrir la página
 
-Pulsa **Agregar hojas** (en el centro, mientras no hay ninguna página abierta) o **Abrir hojas** (`Ctrl + O`) y elige el archivo. Acepta PNG, JPG, BMP y WebP. Si eliges varios a la vez (`Ctrl` o `Shift + clic`), quedan en una cola (sección 6). Si una imagen sola mide más de 3500 px de lado, PanelClean pregunta antes de abrirla, porque procesarla toma más tiempo.
+Pulsa **Agregar hojas** (en el centro, mientras no hay ninguna página abierta) o **Abrir hojas** (`Ctrl + O`) y elige el archivo. Acepta PNG, JPG, BMP, WebP y PDF (sin clave). De un PDF, PanelClean pregunta qué páginas abrir (sección 6). Si eliges varios a la vez (`Ctrl` o `Shift + clic`), quedan en una cola (sección 6). Si una imagen sola mide más de 3500 px de lado, PanelClean pregunta antes de abrirla, porque procesarla toma más tiempo.
 
 ### Paso 2 · Marcar el texto
 
@@ -206,6 +205,14 @@ En las hojas sin regiones, PanelClean busca el texto con **Detectar texto** (sec
 
 **Exportar todas** pide una carpeta y guarda ahí cada hoja que tenga alguna limpieza, como `nombre_limpia.png` junto con su máscara y su reporte (los mismos tres archivos del paso 7). Si dos hojas se llaman igual, la segunda queda como `nombre_limpia_2.png`. Las hojas sin limpiezas no se exportan; al terminar, PanelClean indica cuáles quedaron con regiones sin limpiar. **Exportar**, en la barra superior, sigue guardando solo la hoja abierta.
 
+### Abrir un PDF
+
+Al elegir un PDF, PanelClean pregunta qué páginas abrir: por ejemplo `1-20`, o `3, 8, 12-15`. Cada una queda como una hoja de la cola.
+
+- Abre unas 20 páginas a la vez: todas las hojas abiertas ocupan memoria. Si las elegidas van a ocupar más de 1 GB, PanelClean pregunta antes.
+- Si cada página del PDF es una imagen, como en un manga escaneado, se lee en su tamaño original y sin los márgenes del PDF. Si tiene algo más, se dibuja la página completa.
+- Se exporta una imagen PNG por página: la página 3 de `tomo.pdf` queda como `tomo_p003_limpia.png`. PanelClean no modifica el PDF ni crea uno nuevo.
+
 ## 7. Detectar texto
 
 **Detectar texto** busca el texto de toda la página en dos pasos:
@@ -227,8 +234,8 @@ Con todo el texto marcado, la página queda así:
 
 ### Enseñarle tus páginas al detector
 
-1. Junta en una carpeta las páginas de **una** serie. Conviene enseñarle pocas páginas de varias series, cada una en su carpeta, antes que muchas de una sola.
-2. Arrastra esa carpeta encima de `MARCAR_WINDOWS.bat` (o haz doble clic en él y elígela). En Linux: `.venv/bin/python -m evaluacion.marcar ruta/a/la/carpeta`.
+1. Junta en una carpeta las páginas de **una** serie: imágenes, PDF o ambos. Conviene enseñarle pocas páginas de varias series, cada una en su carpeta, antes que muchas de una sola. Si la serie es un solo PDF, no hace falta la carpeta.
+2. Arrastra esa carpeta o ese PDF encima de `MARCAR_WINDOWS.bat` (o haz doble clic en él y elígelo). En Linux: `.venv/bin/python -m evaluacion.marcar ruta/a/la/carpeta`.
 3. En cada página aparecen, punteadas, las cajas que propone el detector. Corrígelas hasta que haya **un rectángulo por cada bloque de texto, ajustado a las letras** (no al globo):
 
    ![Programa para marcar texto: cajas propuestas (punteadas), una elegida y una «ignorar»](docs/manual/marcar.png)
@@ -241,6 +248,7 @@ Con todo el texto marcado, la página queda así:
    | Marcar una onomatopeya o un letrero del dibujo | Elegirla y `I` («ignorar»: no cuenta ni como texto ni como «no texto») |
    | Deshacer | `Ctrl + Z` |
    | Acercar, mover y volver a ver todo | Rueda, clic derecho y `0` |
+   | Ir a otra página | `Av Pág`, `Re Pág`, o `G` y su número |
    | Terminar la página | `Enter` (pasa a la siguiente) |
 
 4. Marca **todo** el texto antes de pulsar `Enter`: lo que quede sin marcar en una página lista se aprende como «no texto». Una página sin terminar se guarda, pero no se usa.
@@ -248,7 +256,7 @@ Con todo el texto marcado, la página queda así:
 
 **Para saber cómo le va de verdad**, reserva una serie: marca la casilla **Serie reservada para medir** antes de empezar. Con ella no se entrena y no se muestran propuestas. El informe que aparece al entrenar dice, por serie, qué parte del texto llega a proponerse («candidatos») y la precisión y el recall. Si «candidatos» es bajo, ese texto no se arregla enseñándole más páginas.
 
-Tus imágenes no se copian a ningún lado, y no hace falta compartirlas (pueden tener derechos de autor). En `evaluacion/cajas_texto.json` quedan las cajas, con el nombre de la carpeta y de los archivos. Para compartir lo aprendido con el equipo basta con subir ese archivo, `evaluacion/candidatos_propios.csv` y `panelclean/modelo_texto.yml`: son números, y con ellos no se puede reconstruir una página.
+Tus imágenes no se copian a ningún lado, y no hace falta compartirlas (pueden tener derechos de autor). En `evaluacion/cajas_texto.json` quedan las cajas, con el nombre de la carpeta y de los archivos (también el de los PDF: si no quieres que se vea, cámbialo **antes** de empezar a marcar). Para compartir lo aprendido con el equipo basta con subir ese archivo, `evaluacion/candidatos_propios.csv` y `panelclean/modelo_texto.yml`: son números, y con ellos no se puede reconstruir una página.
 
 ## 8. Ajustes avanzados
 
@@ -301,6 +309,8 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 |---|---|
 | «No se encontró Python 3.10 o superior» | Instala Python desde python.org marcando «Add Python to PATH» y vuelve a abrir `INICIAR_WINDOWS.bat` |
 | «No se pudieron instalar las dependencias» | Revisa la conexión a Internet y vuelve a abrir el lanzador: la instalación se reintenta sola |
+| «Para leer PDF falta la biblioteca pypdfium2» | Cierra PanelClean y ábrelo con el lanzador, con internet: la instala solo |
+| Linux: el doble clic no abre el lanzador | En una terminal, en su carpeta: `bash INICIAR_LINUX.sh` |
 | Linux: «Falta Tkinter» | `sudo apt install python3-tk python3-venv` |
 | `ModuleNotFoundError: No module named 'PIL'` (o `cv2`) al correr un `.py` | Se usó el Python del sistema. Abre PanelClean con el lanzador, o usa `.venv\Scripts\python` (Linux: `.venv/bin/python`) |
 | Una región no se limpia | Está en «Complejo / revisar» o «Revisar máscara», o su máscara quedó vacía. Revisa el rosa, corrígelo o elige un método a mano |
@@ -319,5 +329,5 @@ PanelClean es una beta. Estas son sus limitaciones medidas; el detalle está en 
 - **Equipo:** Jesús Ignacio Bustamante Llanquitrue, Patricio Marcelo Guzmán Aranda, Sofia Victoria Nicolao Madrid y Tomás Ramdohr Arellano.
 - **Páginas reales de este manual:** obras «rasetugari», «tencho_isoro» y «tojime_no_siora» del **OpenMantra dataset** (R. Hinami, S. Ishiwatari, K. Yasuda y Y. Matsui, AAAI 2021), licencia CC BY-NC 4.0. Créditos completos en [`datasets/README.md`](datasets/README.md).
 - **Página de ejemplo** (`examples/demo_pagina.png`): sintética, hecha por el equipo.
-- **Fuente de la interfaz:** Quicksand, de The Quicksand Project Authors ([github.com/andrew-paglinawan/QuicksandFamily](https://github.com/andrew-paglinawan/QuicksandFamily)), licencia SIL Open Font License 1.1 (incluida en `panelclean/fuentes/OFL.txt`).
-- Bibliotecas: OpenCV, NumPy, Pillow y Tkinter.
+- **Fuente de la interfaz:** Quicksand, de [The Quicksand Project Authors](https://github.com/andrew-paglinawan/QuicksandFamily), con licencia [SIL OFL 1.1](panelclean/fuentes/OFL.txt).
+- Bibliotecas: OpenCV, NumPy, Pillow, pypdfium2 (con PDFium) y Tkinter.
