@@ -1,4 +1,479 @@
 {
+ "NGE 01-06": {
+  "paginas": {
+   "NGE 01-06.PDF#001": {
+    "alto": 858,
+    "ancho": 1050,
+    "cajas": [],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#002": {
+    "alto": 841,
+    "ancho": 1050,
+    "cajas": [
+     {
+      "h": 270,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 590,
+      "x": 370,
+      "y": 1
+     },
+     {
+      "h": 120,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 302,
+      "x": 375,
+      "y": 708
+     },
+     {
+      "h": 272,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 59,
+      "x": 970,
+      "y": 560
+     },
+     {
+      "h": 257,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 205,
+      "x": 110,
+      "y": 282
+     },
+     {
+      "h": 58,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 182,
+      "x": 11,
+      "y": 769
+     },
+     {
+      "h": 419,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 60,
+      "x": 967,
+      "y": 68
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#003": {
+    "alto": 760,
+    "ancho": 1050,
+    "cajas": [
+     {
+      "h": 176,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 470,
+      "x": 25,
+      "y": 10
+     },
+     {
+      "h": 212,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 255,
+      "x": 18,
+      "y": 453
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#004": {
+    "alto": 760,
+    "ancho": 1050,
+    "cajas": [
+     {
+      "h": 233,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 82,
+      "x": 928,
+      "y": 43
+     },
+     {
+      "h": 159,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 172,
+      "x": 554,
+      "y": 32
+     },
+     {
+      "h": 143,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 125,
+      "x": 279,
+      "y": 42
+     },
+     {
+      "h": 134,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 134,
+      "x": 32,
+      "y": 40
+     },
+     {
+      "h": 103,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 104,
+      "x": 8,
+      "y": 336
+     },
+     {
+      "h": 242,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 145,
+      "x": 162,
+      "y": 329
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#005": {
+    "alto": 1050,
+    "ancho": 719,
+    "cajas": [
+     {
+      "h": 55,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 283,
+      "x": 234,
+      "y": 151
+     },
+     {
+      "h": 46,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 234,
+      "x": 247,
+      "y": 279
+     },
+     {
+      "h": 50,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 33,
+      "x": 585,
+      "y": 279
+     },
+     {
+      "h": 55,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 59,
+      "x": 563,
+      "y": 365
+     },
+     {
+      "h": 55,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 52,
+      "x": 563,
+      "y": 454
+     },
+     {
+      "h": 42,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 213,
+      "x": 247,
+      "y": 461
+     },
+     {
+      "h": 56,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 58,
+      "x": 563,
+      "y": 542
+     },
+     {
+      "h": 48,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 116,
+      "x": 244,
+      "y": 547
+     },
+     {
+      "h": 56,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 71,
+      "x": 550,
+      "y": 630
+     },
+     {
+      "h": 55,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 71,
+      "x": 550,
+      "y": 719
+     },
+     {
+      "h": 32,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 188,
+      "x": 251,
+      "y": 377
+     },
+     {
+      "h": 89,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 221,
+      "x": 245,
+      "y": 637
+     },
+     {
+      "h": 39,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 131,
+      "x": 249,
+      "y": 729
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#006": {
+    "alto": 1050,
+    "ancho": 725,
+    "cajas": [
+     {
+      "h": 225,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 147,
+      "x": 521,
+      "y": 110
+     },
+     {
+      "h": 162,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 93,
+      "x": 87,
+      "y": 145
+     },
+     {
+      "h": 226,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 95,
+      "x": 521,
+      "y": 671
+     },
+     {
+      "h": 151,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 103,
+      "x": 284,
+      "y": 726
+     },
+     {
+      "h": 174,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 80,
+      "x": 96,
+      "y": 729
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#007": {
+    "alto": 760,
+    "ancho": 1050,
+    "cajas": [
+     {
+      "h": 30,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 245,
+      "x": 29,
+      "y": 77
+     },
+     {
+      "h": 68,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 117,
+      "x": 898,
+      "y": 678
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#008": {
+    "alto": 1050,
+    "ancho": 725,
+    "cajas": [],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#009": {
+    "alto": 1050,
+    "ancho": 725,
+    "cajas": [
+     {
+      "h": 97,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 35,
+      "x": 260,
+      "y": 33
+     },
+     {
+      "h": 39,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 38,
+      "x": 564,
+      "y": 145
+     },
+     {
+      "h": 44,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 103,
+      "x": 187,
+      "y": 827
+     },
+     {
+      "h": 83,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 38,
+      "x": 519,
+      "y": 134
+     },
+     {
+      "h": 99,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 64,
+      "x": 201,
+      "y": 19
+     }
+    ],
+    "completa": true,
+    "etiquetador": "tomas ramdohr"
+   },
+   "NGE 01-06.PDF#010": {
+    "alto": 1050,
+    "ancho": 725,
+    "cajas": [
+     {
+      "h": 78,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 129,
+      "x": 561,
+      "y": 79
+     },
+     {
+      "h": 104,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 90,
+      "x": 18,
+      "y": 86
+     },
+     {
+      "h": 62,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 87,
+      "x": 415,
+      "y": 241
+     },
+     {
+      "h": 83,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 64,
+      "x": 435,
+      "y": 412
+     },
+     {
+      "h": 70,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 58,
+      "x": 47,
+      "y": 414
+     },
+     {
+      "h": 38,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 56,
+      "x": 16,
+      "y": 513
+     },
+     {
+      "h": 84,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 83,
+      "x": 546,
+      "y": 621
+     },
+     {
+      "h": 104,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 94,
+      "x": 37,
+      "y": 623
+     },
+     {
+      "h": 111,
+      "origen": "mano",
+      "tipo": "texto",
+      "w": 84,
+      "x": 149,
+      "y": 791
+     },
+     {
+      "h": 88,
+      "origen": "propuesta",
+      "tipo": "texto",
+      "w": 97,
+      "x": 42,
+      "y": 877
+     }
+    ],
+    "completa": false,
+    "etiquetador": "tomas ramdohr"
+   }
+  },
+  "reservada": false
+ },
  "slam dunk": {
   "paginas": {
    "36603-1.jpg": {
